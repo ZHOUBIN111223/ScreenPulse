@@ -1,0 +1,245 @@
+:root {
+  --bg: #f5efe4;
+  --bg-accent: #d7e7de;
+  --ink: #152218;
+  --muted: #5c685c;
+  --line: rgba(21, 34, 24, 0.12);
+  --panel: rgba(255, 250, 244, 0.92);
+  --panel-strong: #fffaf2;
+  --primary: #0d6f57;
+  --primary-strong: #0a5a46;
+  --warning: #b46a10;
+  --danger: #b04d2d;
+  --shadow: 0 24px 60px rgba(56, 67, 45, 0.12);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  padding: 0;
+  margin: 0;
+  min-height: 100%;
+}
+
+body {
+  font-family: var(--font-sans), "PingFang SC", "Microsoft YaHei", sans-serif;
+  color: var(--ink);
+  background:
+    radial-gradient(circle at top left, rgba(215, 231, 222, 0.85), transparent 30%),
+    radial-gradient(circle at top right, rgba(242, 208, 170, 0.45), transparent 28%),
+    linear-gradient(135deg, var(--bg), #eef4ee 55%, #f8f0e7);
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button,
+input {
+  font: inherit;
+}
+
+.app-shell {
+  min-height: 100vh;
+  padding: 32px 20px 48px;
+}
+
+.page-grid {
+  max-width: 1240px;
+  margin: 0 auto;
+  display: grid;
+  gap: 20px;
+}
+
+.hero {
+  display: grid;
+  gap: 12px;
+  padding: 28px;
+  border: 1px solid var(--line);
+  border-radius: 28px;
+  background: linear-gradient(135deg, rgba(255, 250, 244, 0.9), rgba(250, 255, 249, 0.75));
+  box-shadow: var(--shadow);
+}
+
+.hero h1,
+.hero h2,
+.panel h2,
+.panel h3 {
+  margin: 0;
+}
+
+.hero p,
+.panel p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 24px;
+  padding: 24px;
+  box-shadow: var(--shadow);
+}
+
+.panel-grid {
+  display: grid;
+  gap: 20px;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+}
+
+.stats-grid {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+}
+
+.stat-card {
+  border-radius: 18px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  background: var(--panel-strong);
+}
+
+.stat-card strong {
+  display: block;
+  margin-top: 8px;
+  font-size: 1.15rem;
+}
+
+.form-grid {
+  display: grid;
+  gap: 14px;
+}
+
+.label {
+  display: grid;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 0.95rem;
+}
+
+.input {
+  width: 100%;
+  border: 1px solid rgba(21, 34, 24, 0.18);
+  border-radius: 14px;
+  padding: 12px 14px;
+  background: rgba(255, 255, 255, 0.9);
+}
+
+.button-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.button {
+  border: 0;
+  border-radius: 999px;
+  padding: 12px 18px;
+  cursor: pointer;
+  transition: transform 0.18s ease, background 0.18s ease;
+}
+
+.button:hover {
+  transform: translateY(-1px);
+}
+
+.button-primary {
+  background: var(--primary);
+  color: #fff;
+}
+
+.button-primary:hover {
+  background: var(--primary-strong);
+}
+
+.button-secondary {
+  background: rgba(13, 111, 87, 0.1);
+  color: var(--primary-strong);
+}
+
+.button-danger {
+  background: rgba(176, 77, 45, 0.12);
+  color: var(--danger);
+}
+
+.button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-size: 0.9rem;
+  background: rgba(13, 111, 87, 0.08);
+  color: var(--primary-strong);
+}
+
+.pill-warning {
+  background: rgba(180, 106, 16, 0.12);
+  color: var(--warning);
+}
+
+.pill-danger {
+  background: rgba(176, 77, 45, 0.12);
+  color: var(--danger);
+}
+
+.list {
+  display: grid;
+  gap: 12px;
+}
+
+.list-item {
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.76);
+  border-radius: 18px;
+  padding: 16px;
+  display: grid;
+  gap: 8px;
+}
+
+.list-item button {
+  justify-self: start;
+}
+
+.mono {
+  font-family: var(--font-mono), "Consolas", monospace;
+}
+
+.note {
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+.error {
+  color: var(--danger);
+}
+
+.success {
+  color: var(--primary-strong);
+}
+
+.split {
+  display: grid;
+  gap: 20px;
+  grid-template-columns: minmax(260px, 320px) 1fr;
+}
+
+@media (max-width: 920px) {
+  .split {
+    grid-template-columns: 1fr;
+  }
+}
+

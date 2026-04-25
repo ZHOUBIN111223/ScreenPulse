@@ -1,0 +1,4 @@
+interface:
+  display_name: "ScreenPulse Logging Guardrails"
+  short_description: "Logging and audit design rules for ScreenPulse."
+  default_prompt: "Use $screenpulse-logging-guardrails when adding or changing ScreenPulse logging, audit events, request context, or sensitive data handling."
