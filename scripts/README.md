@@ -9,6 +9,9 @@ This directory owns the local development startup helpers for ScreenPulse.
   - Writes logs and tracked process metadata into `.codex-run/`.
 - `stop-dev.ps1`
   - Stops the tracked dev processes recorded by `start-dev.ps1`.
+- `init-server-env.sh`
+  - Creates a server `.env` for Docker deployment if one does not already exist.
+  - Defaults public browser-facing URLs to `47.104.158.30` and generates a runtime secret.
 
 ## Local State
 

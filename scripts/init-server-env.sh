@@ -1,10 +1,28 @@
+#!/usr/bin/env sh
+set -eu
+
+PUBLIC_IP="${PUBLIC_IP:-47.104.158.30}"
+ENV_FILE="${ENV_FILE:-.env}"
+
+if [ -f "$ENV_FILE" ]; then
+  echo "$ENV_FILE already exists; leaving it unchanged."
+  exit 0
+fi
+
+if command -v openssl >/dev/null 2>&1; then
+  SECRET_KEY="$(openssl rand -hex 32)"
+else
+  SECRET_KEY="$(LC_ALL=C tr -dc 'A-Za-z0-9' </dev/urandom | head -c 64)"
+fi
+
+cat >"$ENV_FILE" <<EOF
 # Frontend
-NEXT_PUBLIC_API_BASE_URL=http://47.104.158.30:8011/api
+NEXT_PUBLIC_API_BASE_URL=http://${PUBLIC_IP}:8011/api
 
 # Backend
-SCREENPULSE_SECRET_KEY=replace-with-at-least-32-random-characters
+SCREENPULSE_SECRET_KEY=${SECRET_KEY}
 SCREENPULSE_DATABASE_URL=sqlite:///./storage/screenpulse.db
-SCREENPULSE_CORS_ORIGINS=http://47.104.158.30:3001
+SCREENPULSE_CORS_ORIGINS=http://${PUBLIC_IP}:3001
 SCREENPULSE_STORAGE_DIR=storage
 SCREENPULSE_ACCESS_TOKEN_EXPIRE_HOURS=12
 SCREENPULSE_DEFAULT_SAMPLING_INTERVAL_MINUTES=5
@@ -25,3 +43,6 @@ SCREENPULSE_SUMMARY_MODEL=
 SCREENPULSE_LIVEKIT_URL=
 SCREENPULSE_LIVEKIT_API_KEY=
 SCREENPULSE_LIVEKIT_API_SECRET=
+EOF
+
+echo "Created $ENV_FILE for ${PUBLIC_IP}."

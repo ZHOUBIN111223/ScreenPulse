@@ -30,7 +30,7 @@ and hourly summaries that team admins can review.
 - `docker-compose.yml`
   - Local multi-service startup for the MVP stack.
 - `scripts/`
-  - Local PowerShell helpers that start and stop the dev stack, and save runtime state in `.codex-run/`.
+  - Local PowerShell helpers that start and stop the dev stack, and a Linux helper that initializes server `.env` values for Docker deployment.
 
 ## Current Facts, Not Aspirations
 
@@ -57,6 +57,7 @@ and hourly summaries that team admins can review.
 - Frontend team workspace: `frontend/components/team-workspace.tsx`
 - Backend application: `backend/app/main.py`
 - Local dev startup helper: `scripts/start-dev.ps1`
+- Server env initialization helper: `scripts/init-server-env.sh`
 - Auth flow: `backend/app/routes/auth.py`
 - Team flow: `backend/app/routes/teams.py`
 - Capture flow: `backend/app/routes/sessions.py`
