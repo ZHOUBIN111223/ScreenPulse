@@ -15,7 +15,7 @@ if (-not (Test-Path $statePath)) {
 $state = Get-Content $statePath -Raw | ConvertFrom-Json
 $stopped = @()
 
-foreach ($serviceName in @("frontend", "backend")) {
+foreach ($serviceName in @("frontend", "backend", "admin_frontend")) {
     $service = $state.$serviceName
     if (-not $service -or -not $service.pid) {
         continue

@@ -11,6 +11,7 @@ __pycache__
 backend/storage
 frontend/node_modules
 frontend/.next
+frontend/.next-admin
 backend/.mypy_cache
 backend/.ruff_cache
 dist

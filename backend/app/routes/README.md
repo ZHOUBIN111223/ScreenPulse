@@ -1,13 +1,14 @@
 # Route Layer
 
-This directory contains FastAPI route modules for auth, team management,
-invite-code joins, team-scoped screen sessions, and summary reporting.
+This directory contains FastAPI route modules for auth, current-team user flows,
+global-admin management, current-team screen sessions, audit logs, and summary reporting.
 
 ## Modules
 
 - `auth.py`: registration, login, current-user, and logout endpoints.
-- `teams.py`: teams, members, invite codes, team settings, and summary endpoints.
-- `sessions.py`: team-scoped session lifecycle, frame uploads, and LiveKit token endpoints.
+- `teams.py`: user-facing team creation, listing, invite-code joins, and current-team selection.
+- `sessions.py`: current-team session lifecycle, screenshot uploads, current settings, and member summary endpoints.
+- `admin.py`: global-admin users, teams, sessions, summaries, settings, members, invite codes, audit logs, and frame history.
 
 ## Rules
 

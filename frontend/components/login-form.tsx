@@ -1,6 +1,6 @@
 "use client";
 
-// Login and registration form that restores a prior session and routes authenticated users into the team workspace.
+// Login and registration form that restores a prior session and routes users to the matching workspace.
 import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { clearToken, fetchMe, login, register, setToken } from "../lib/api";
@@ -16,11 +16,16 @@ export function LoginForm() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
+  async function routeAfterAuth() {
+    const user = await fetchMe();
+    router.replace(user.is_admin ? "/admin" : "/teams");
+  }
+
   useEffect(() => {
     async function restore() {
       try {
         await fetchMe();
-        router.replace("/teams");
+        await routeAfterAuth();
       } catch {
         clearToken();
       }
@@ -40,7 +45,7 @@ export function LoginForm() {
           ? await login(email, password)
           : await register(email, name, password);
       setToken(result.access_token);
-      router.replace("/teams");
+      await routeAfterAuth();
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : "认证失败");
     } finally {

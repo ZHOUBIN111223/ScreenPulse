@@ -3,9 +3,9 @@
 ## Purpose
 
 ScreenPulse is a browser-based MVP for team screen-sharing analysis.
-Users create teams, join by invite code, voluntarily share a full display into a
-selected team, and the backend turns periodic screenshots into text observations
-and hourly summaries that team admins can review.
+Users create teams, join by invite code, choose a current team, voluntarily share
+a full display, and the backend turns periodic screenshots into text observations
+and hourly summaries that global admins can review.
 
 ## Read This In Order
 
@@ -19,12 +19,12 @@ and hourly summaries that team admins can review.
 
 - `frontend/`
   - Next.js App Router UI.
-  - `app/` contains thin route entries, including the main `/teams` workspace route.
-  - `components/` contains login, registration, team workspace, and browser screen-share behavior.
+  - `app/` contains thin route entries, including the main `/teams` workspace route and the `/admin` console route.
+  - `components/` contains login, registration, team workspace, admin console, and browser screen-share behavior.
   - `lib/api.ts` is the frontend's API contract and fetch wrapper.
 - `backend/`
   - FastAPI application with synchronous SQLAlchemy sessions over SQLite.
-  - `app/routes/` owns auth, team, invite-code, settings, summary, and screen-session endpoints.
+  - `app/routes/` owns auth, current-team user endpoints, global-admin endpoints, settings, audit-log, summary, and screen-session endpoints.
   - `app/services/` owns screenshot persistence, model calls, summary refresh, and audit-log helpers.
   - `app/models.py` and `app/schemas.py` are the database and API contract layers.
 - `docker-compose.yml`
@@ -55,36 +55,38 @@ and hourly summaries that team admins can review.
 
 - Frontend landing page: `frontend/app/page.tsx`
 - Frontend team workspace: `frontend/components/team-workspace.tsx`
+- Frontend admin console: `frontend/components/admin-panel.tsx`
 - Backend application: `backend/app/main.py`
 - Local dev startup helper: `scripts/start-dev.ps1`
 - Server env initialization helper: `scripts/init-server-env.sh`
 - Auth flow: `backend/app/routes/auth.py`
 - Team flow: `backend/app/routes/teams.py`
 - Capture flow: `backend/app/routes/sessions.py`
+- Global admin flow: `backend/app/routes/admin.py`
 - Analysis pipeline: `backend/app/services/analysis.py`
 - Integration test covering the main backend path: `backend/tests/test_api.py`
 
 ## Core Data Flow
 
 1. The user registers or logs in through `frontend/components/login-form.tsx`.
-2. The user creates a team or joins one by invite code.
-3. The user selects a team in `frontend/components/team-workspace.tsx`.
-4. The browser uses `getDisplayMedia`, captures PNG frames locally, and uploads them into the selected team session.
+2. The user creates a team or joins one by invite code, which sets the backend current team.
+3. The user selects a team in `frontend/components/team-workspace.tsx`, which updates the backend current team.
+4. The browser uses `getDisplayMedia`, captures PNG frames locally, and uploads them into the current team session.
 5. Backend saves the screenshot, stores the vision result, and refreshes the team-scoped hourly summary.
 6. Team admins review member status and summaries; members can review only their own summaries.
 
 ## Persistence Model
 
 - `users`
-  - Login identity and profile metadata.
+  - Login identity, profile metadata, and current team pointer.
 - `teams`
   - Team container and creator metadata.
 - `team_members`
   - Team membership and role (`admin` or `member`).
 - `invite_codes`
-  - Team invite codes with expiry, usage count, and status.
+  - Team invite codes with admin-controlled expiry, usage count, max uses, and status.
 - `team_settings`
-  - Team-scoped screenshot sampling interval in seconds, with legacy minute fields kept for compatibility.
+  - Team-scoped screenshot sampling interval and screen-share enforcement flag, with legacy minute fields kept for compatibility.
 - `screen_sessions`
   - Team-scoped screen sharing sessions with start, stop, and active status.
 - `frame_captures`

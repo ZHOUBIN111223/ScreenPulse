@@ -21,7 +21,7 @@ class Settings(BaseSettings):
     secret_key: str = ""
     access_token_expire_hours: int = 12
     database_url: str = "sqlite:///./storage/screenpulse.db"
-    cors_origins: str = "http://localhost:3001"
+    cors_origins: str = "http://localhost:3001,http://localhost:3011,http://127.0.0.1:3001,http://127.0.0.1:3011"
     storage_dir: str = "storage"
     default_sampling_interval_minutes: int = 5
     max_frame_upload_bytes: int = 5 * 1024 * 1024
@@ -29,6 +29,7 @@ class Settings(BaseSettings):
     invite_code_max_uses: int = 25
     auth_rate_limit_attempts: int = 10
     auth_rate_limit_window_seconds: int = 60
+    admin_emails: str = ""
 
     model_api_base_url: str = ""
     model_api_key: str = ""
@@ -50,6 +51,10 @@ class Settings(BaseSettings):
     @property
     def default_sampling_interval_seconds(self) -> int:
         return self.default_sampling_interval_minutes * 60
+
+    @property
+    def admin_email_set(self) -> set[str]:
+        return {email.strip().lower() for email in self.admin_emails.split(",") if email.strip()}
 
     def validate_runtime_security(self) -> None:
         if not self.secret_key or self.secret_key == LEGACY_DEV_SECRET_KEY:

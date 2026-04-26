@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.database import get_db
-from app.dependencies import get_current_user
+from app.dependencies import get_current_user, is_global_admin
 from app.models import User
 from app.schemas import AuthResponse, LoginRequest, MessageOut, RegisterRequest, UserOut
 from app.security import create_access_token, hash_password, verify_password
@@ -25,6 +25,16 @@ AUTH_REQUIRED_RESPONSES = {
 
 def _normalize_email(email: str) -> str:
     return email.strip().lower()
+
+
+def _user_out(user: User) -> UserOut:
+    return UserOut(
+        id=user.id,
+        email=user.email,
+        name=user.name,
+        current_team_id=user.current_team_id,
+        is_admin=is_global_admin(user),
+    )
 
 
 def _client_key(request: Request, email: str, action: str) -> str:
@@ -73,7 +83,7 @@ def register(request: Request, payload: RegisterRequest, db: Session = Depends(g
     db.commit()
     db.refresh(user)
 
-    return AuthResponse(access_token=create_access_token(user.id), user=UserOut.model_validate(user))
+    return AuthResponse(access_token=create_access_token(user.id), user=_user_out(user))
 
 
 @router.post(
@@ -97,7 +107,7 @@ def login(request: Request, payload: LoginRequest, db: Session = Depends(get_db)
     if user is None or not verify_password(payload.password, user.password_hash):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
 
-    return AuthResponse(access_token=create_access_token(user.id), user=UserOut.model_validate(user))
+    return AuthResponse(access_token=create_access_token(user.id), user=_user_out(user))
 
 
 @router.get(
@@ -112,7 +122,7 @@ def login(request: Request, payload: LoginRequest, db: Session = Depends(get_db)
     responses=AUTH_REQUIRED_RESPONSES,
 )
 def me(user: User = Depends(get_current_user)) -> UserOut:
-    return UserOut.model_validate(user)
+    return _user_out(user)
 
 
 @router.post(

@@ -20,7 +20,7 @@
 
 | 团队角色   | 权限                      |
 | ------ | ----------------------- |
-| admin  | 团队创建者或管理员，可以邀请成员、查看成员总结 |
+| admin  | 团队创建者或管理员，可以邀请成员、查看成员总结、管理成员、管理截图识别历史 |
 | member | 普通成员，可以共享自己的屏幕          |
 
 ---
@@ -42,6 +42,7 @@
 * 创建团队
 * 查看团队成员
 * 生成邀请码
+* 查看和禁用邀请码
 * 通过邀请码邀请成员
 * 设置抽帧频率
 * 默认抽帧频率：5 分钟一次
@@ -80,6 +81,15 @@ admin 可以查看：
 * 成员共享开始时间
 * 成员小时级总结
 * 成员历史总结
+* 邀请码列表与使用状态
+* 历史截图和视觉识别结果
+
+admin 可以管理：
+
+* 团队抽帧频率
+* 邀请码启用 / 禁用状态
+* 团队成员添加、移除和角色修改
+* 历史截图和对应识别结果删除
 
 member 可以查看：
 
@@ -94,9 +104,14 @@ member 可以查看：
 * admin 可以查看本团队所有成员总结
 * member 只能查看自己的总结
 * admin 可以生成邀请码
+* admin 可以查看和禁用邀请码
 * member 不能生成邀请码
 * admin 可以修改团队抽帧频率
 * member 不能修改配置
+* admin 可以添加、移除团队成员并修改成员角色
+* admin 不能移除或降级团队内最后一个 active admin
+* admin 可以查看和删除本团队截图识别历史
+* member 不能查看或删除其他成员截图识别历史
 
 ---
 
@@ -223,6 +238,7 @@ code
 created_by_user_id
 expires_at
 used_count
+max_uses
 status
 created_at
 ```
@@ -232,6 +248,7 @@ created_at
 ```text
 id
 team_id
+frame_interval_seconds
 frame_interval_minutes
 created_at
 updated_at
@@ -258,6 +275,8 @@ session_id
 user_id
 captured_at
 image_path
+width
+height
 created_at
 ```
 
@@ -350,6 +369,19 @@ admin 可配置：
 * 抽帧频率
 * 默认 5 分钟一次
 
+## 7. 管理员专属面板
+
+admin 通过独立 `/admin` 页面和单独前端端口访问，便于与普通用户工作台区分。
+
+管理员面板应包含：
+
+* 实时共享状态。
+* 全队和单成员小时级总结。
+* 团队抽帧设置。
+* 邀请码生成、查看、启用和禁用。
+* 历史截图与识别结果查看和删除。
+* 成员添加、移除和角色修改。
+
 ---
 
 ## 九、接口需求
@@ -370,12 +402,17 @@ POST /teams
 GET  /teams
 GET  /teams/{team_id}
 GET  /teams/{team_id}/members
+POST /teams/{team_id}/members
+PATCH /teams/{team_id}/members/{user_id}
+DELETE /teams/{team_id}/members/{user_id}
 ```
 
 ## 邀请码接口
 
 ```text
 POST /teams/{team_id}/invite-codes
+GET  /teams/{team_id}/invite-codes
+PATCH /teams/{team_id}/invite-codes/{invite_code_id}
 POST /invite-codes/{code}/join
 ```
 
@@ -406,6 +443,13 @@ POST /teams/{team_id}/livekit/token
 GET /teams/{team_id}/summaries/me
 GET /teams/{team_id}/summaries
 GET /teams/{team_id}/members/{user_id}/summaries
+```
+
+## 截图识别历史接口
+
+```text
+GET    /teams/{team_id}/frames
+DELETE /teams/{team_id}/frames/{frame_id}
 ```
 
 ---
@@ -439,6 +483,8 @@ MVP 完成后需要满足：
 * 系统可以识别截图内容
 * 系统可以生成小时级总结
 * admin 可以查看团队成员总结
+* admin 可以在独立管理员面板查看所有成员实时共享状态
+* admin 可以管理邀请码、成员角色和截图识别历史
 * member 只能查看自己的总结
 * 不保存完整录屏
 * 原始媒体抽帧后删除

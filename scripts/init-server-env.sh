@@ -3,9 +3,35 @@ set -eu
 
 PUBLIC_IP="${PUBLIC_IP:-47.104.158.30}"
 ENV_FILE="${ENV_FILE:-.env}"
+PUBLIC_FRONTEND_ORIGIN="http://${PUBLIC_IP}:3001"
+PUBLIC_ADMIN_ORIGIN="http://${PUBLIC_IP}:3011"
+PUBLIC_API_BASE_URL="http://${PUBLIC_IP}:8011/api"
+PUBLIC_CORS_ORIGINS="${PUBLIC_FRONTEND_ORIGIN},${PUBLIC_ADMIN_ORIGIN}"
+
+set_env_value() {
+  key="$1"
+  value="$2"
+
+  if grep -q "^${key}=" "$ENV_FILE"; then
+    tmp_file="${ENV_FILE}.tmp.$$"
+    awk -v key="$key" -v value="$value" '
+      BEGIN { prefix = key "=" }
+      index($0, prefix) == 1 { $0 = prefix value }
+      { print }
+    ' "$ENV_FILE" >"$tmp_file"
+    mv "$tmp_file" "$ENV_FILE"
+  else
+    printf '\n%s=%s\n' "$key" "$value" >>"$ENV_FILE"
+  fi
+}
 
 if [ -f "$ENV_FILE" ]; then
-  echo "$ENV_FILE already exists; leaving it unchanged."
+  set_env_value "NEXT_PUBLIC_API_BASE_URL" "$PUBLIC_API_BASE_URL"
+  set_env_value "SCREENPULSE_CORS_ORIGINS" "$PUBLIC_CORS_ORIGINS"
+  if ! grep -q "^SCREENPULSE_ADMIN_EMAILS=" "$ENV_FILE"; then
+    set_env_value "SCREENPULSE_ADMIN_EMAILS" "admin@example.com"
+  fi
+  echo "Updated browser-facing URLs in $ENV_FILE for ${PUBLIC_IP}."
   exit 0
 fi
 
@@ -17,12 +43,12 @@ fi
 
 cat >"$ENV_FILE" <<EOF
 # Frontend
-NEXT_PUBLIC_API_BASE_URL=http://${PUBLIC_IP}:8011/api
+NEXT_PUBLIC_API_BASE_URL=${PUBLIC_API_BASE_URL}
 
 # Backend
 SCREENPULSE_SECRET_KEY=${SECRET_KEY}
 SCREENPULSE_DATABASE_URL=sqlite:///./storage/screenpulse.db
-SCREENPULSE_CORS_ORIGINS=http://${PUBLIC_IP}:3001
+SCREENPULSE_CORS_ORIGINS=${PUBLIC_CORS_ORIGINS}
 SCREENPULSE_STORAGE_DIR=storage
 SCREENPULSE_ACCESS_TOKEN_EXPIRE_HOURS=12
 SCREENPULSE_DEFAULT_SAMPLING_INTERVAL_MINUTES=5
@@ -31,6 +57,7 @@ SCREENPULSE_MAX_FRAME_PIXELS=8294400
 SCREENPULSE_INVITE_CODE_MAX_USES=25
 SCREENPULSE_AUTH_RATE_LIMIT_ATTEMPTS=10
 SCREENPULSE_AUTH_RATE_LIMIT_WINDOW_SECONDS=60
+SCREENPULSE_ADMIN_EMAILS=admin@example.com
 
 # Optional OpenAI-compatible multimodal endpoint
 # Example: http://host.docker.internal:1234/v1

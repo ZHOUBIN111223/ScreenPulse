@@ -13,10 +13,12 @@ sh scripts/init-server-env.sh
 docker compose up -d --build
 ```
 
-The init script creates `.env` only when it does not already exist. It writes:
+The init script creates `.env` when it does not already exist. If `.env`
+already exists, it refreshes only the browser-facing API URL and CORS origins
+so older deployments do not keep stale frontend origins. It writes:
 
 - `NEXT_PUBLIC_API_BASE_URL=http://47.104.158.30:8011/api`
-- `SCREENPULSE_CORS_ORIGINS=http://47.104.158.30:3001`
+- `SCREENPULSE_CORS_ORIGINS=http://47.104.158.30:3001,http://47.104.158.30:3011`
 - a generated `SCREENPULSE_SECRET_KEY`
 
 ## Ports
@@ -24,6 +26,7 @@ The init script creates `.env` only when it does not already exist. It writes:
 Open these ports in the server firewall and cloud security group:
 
 - `3001`: frontend
+- `3011`: admin frontend, when running the dedicated admin console separately
 - `8011`: backend API
 
 ## Local Development

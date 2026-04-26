@@ -1,6 +1,6 @@
-// Legacy route kept only to redirect older links into the team workspace.
-import { redirect } from "next/navigation";
+// Thin route entry for the dedicated admin console.
+import { AdminPanel } from "../../components/admin-panel";
 
 export default function AdminPage() {
-  redirect("/teams");
+  return <AdminPanel />;
 }

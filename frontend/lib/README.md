@@ -4,7 +4,7 @@ This directory contains shared frontend helpers.
 
 ## Files
 
-- `api.ts`: frontend-side request wrappers and TypeScript types that mirror backend contracts.
+- `api.ts`: frontend-side request wrappers and TypeScript types that mirror backend contracts, including admin console contracts.
 
 ## Rules
 

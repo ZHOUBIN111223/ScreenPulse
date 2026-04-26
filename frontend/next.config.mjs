@@ -1,5 +1,6 @@
 /** @type {import("next").NextConfig} */
 const nextConfig = {
+  distDir: process.env.SCREENPULSE_NEXT_DIST_DIR ?? ".next",
   output: "standalone"
 };
 

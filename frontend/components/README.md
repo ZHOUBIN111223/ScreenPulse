@@ -6,6 +6,7 @@ This directory contains client-side UI behavior.
 
 - `login-form.tsx`: login, registration, token restore, and redirect into the team workspace.
 - `team-workspace.tsx`: team selection, invite generation, team settings, member review, screen-share controls, and summary views.
+- `admin-panel.tsx`: admin-only console for team status, summaries, settings, invite codes, audit logs, frame history, data deletion, and member management.
 
 ## Rules
 

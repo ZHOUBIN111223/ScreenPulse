@@ -4,8 +4,10 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "dev:admin": "set SCREENPULSE_NEXT_DIST_DIR=.next-admin&& next dev -p 3011",
     "build": "next build",
-    "start": "next start"
+    "start": "next start",
+    "start:admin": "set SCREENPULSE_NEXT_DIST_DIR=.next-admin&& next start -p 3011"
   },
   "dependencies": {
     "next": "^14.2.0",
@@ -19,4 +21,3 @@
     "typescript": "^5.7.2"
   }
 }
-

@@ -9,7 +9,9 @@ from sqlalchemy import inspect, text
 
 from app.config import get_settings
 from app.database import Base, engine
+from app.observability import request_observability_middleware
 from app.routes import auth, sessions, teams
+from app.routes import admin
 
 settings = get_settings()
 
@@ -39,6 +41,22 @@ def _ensure_sqlite_interval_seconds_column() -> None:
         )
 
 
+def _ensure_sqlite_force_screen_share_column() -> None:
+    if not settings.database_url.startswith("sqlite"):
+        return
+
+    inspector = inspect(engine)
+    if "team_settings" not in inspector.get_table_names():
+        return
+
+    columns = {column["name"] for column in inspector.get_columns("team_settings")}
+    if "force_screen_share" in columns:
+        return
+
+    with engine.begin() as connection:
+        connection.execute(text("ALTER TABLE team_settings ADD COLUMN force_screen_share BOOLEAN DEFAULT 0 NOT NULL"))
+
+
 def _ensure_sqlite_invite_code_max_uses_column() -> None:
     if not settings.database_url.startswith("sqlite"):
         return
@@ -59,17 +77,36 @@ def _ensure_sqlite_invite_code_max_uses_column() -> None:
         )
 
 
+def _ensure_sqlite_user_current_team_column() -> None:
+    if not settings.database_url.startswith("sqlite"):
+        return
+
+    inspector = inspect(engine)
+    if "users" not in inspector.get_table_names():
+        return
+
+    columns = {column["name"] for column in inspector.get_columns("users")}
+    if "current_team_id" in columns:
+        return
+
+    with engine.begin() as connection:
+        connection.execute(text("ALTER TABLE users ADD COLUMN current_team_id INTEGER"))
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     settings.validate_runtime_security()
     settings.storage_path.mkdir(parents=True, exist_ok=True)
     Base.metadata.create_all(bind=engine)
     _ensure_sqlite_interval_seconds_column()
+    _ensure_sqlite_force_screen_share_column()
     _ensure_sqlite_invite_code_max_uses_column()
+    _ensure_sqlite_user_current_team_column()
     yield
 
 
 app = FastAPI(title=settings.app_name, lifespan=lifespan)
+app.middleware("http")(request_observability_middleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origin_list,
@@ -81,6 +118,7 @@ app.add_middleware(
 app.include_router(auth.router, prefix=settings.api_prefix)
 app.include_router(teams.router, prefix=settings.api_prefix)
 app.include_router(sessions.router, prefix=settings.api_prefix)
+app.include_router(admin.router, prefix=settings.api_prefix)
 
 
 @app.get(

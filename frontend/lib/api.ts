@@ -5,6 +5,8 @@ export type User = {
   id: number;
   email: string;
   name: string;
+  current_team_id: number | null;
+  is_admin: boolean;
 };
 
 export type AuthResponse = {
@@ -25,6 +27,7 @@ export type Team = {
 export type TeamSetting = {
   frame_interval_seconds: number;
   frame_interval_minutes: number;
+  force_screen_share: boolean;
 };
 
 export type Session = {
@@ -71,6 +74,11 @@ export type InviteCode = {
   created_at: string;
 };
 
+export type InviteCodeCreateInput = {
+  expires_in_hours: number | null;
+  max_uses: number | null;
+};
+
 export type HourlySummary = {
   id: number;
   team_id: number;
@@ -83,9 +91,51 @@ export type HourlySummary = {
   created_at: string;
 };
 
+export type AuditLog = {
+  id: number;
+  team_id: number | null;
+  actor_user_id: number | null;
+  actor_name: string | null;
+  actor_email: string | null;
+  action: string;
+  target_type: string;
+  target_id: number | null;
+  created_at: string;
+};
+
+export type AdminFrame = {
+  frame_id: number;
+  team_id: number;
+  session_id: number;
+  user_id: number;
+  user_name: string;
+  user_email: string;
+  captured_at: string;
+  width: number;
+  height: number;
+  created_at: string;
+  recognized_content: string | null;
+  activity_description: string | null;
+  model_name: string | null;
+};
+
+export type AdminUser = User;
+
 type MessageOut = {
   message: string;
 };
+
+export class ApiError extends Error {
+  requestId: string | null;
+  status: number;
+
+  constructor(message: string, status: number, requestId: string | null) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+    this.requestId = requestId;
+  }
+}
 
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8011/api";
@@ -129,7 +179,10 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
   if (!response.ok) {
     const data = await response.json().catch(() => ({ detail: "请求失败" }));
-    throw new Error(data.detail ?? "请求失败");
+    const requestId = response.headers.get("X-Request-ID");
+    const detail = data.detail ?? "请求失败";
+    const message = requestId ? `${detail} (request id: ${requestId})` : detail;
+    throw new ApiError(message, response.status, requestId);
   }
 
   if (response.status === 204) {
@@ -165,6 +218,10 @@ export function fetchTeams() {
   return request<Team[]>("/teams");
 }
 
+export function fetchAdminTeams() {
+  return request<Team[]>("/admin/teams");
+}
+
 export function createTeam(name: string) {
   return request<Team>("/teams", {
     method: "POST",
@@ -173,77 +230,193 @@ export function createTeam(name: string) {
 }
 
 export function fetchTeam(teamId: number) {
-  return request<Team>(`/teams/${teamId}`);
+  return setCurrentTeam(teamId);
 }
 
-export function fetchTeamMembers(teamId: number) {
-  return request<TeamMember[]>(`/teams/${teamId}/members`);
+export function fetchCurrentTeam() {
+  return request<Team>("/teams/current");
 }
 
-export function createInviteCode(teamId: number) {
-  return request<InviteCode>(`/teams/${teamId}/invite-codes`, {
-    method: "POST"
+export function setCurrentTeam(teamId: number) {
+  return request<Team>("/teams/current", {
+    method: "PUT",
+    body: JSON.stringify({ team_id: teamId })
+  });
+}
+
+export function fetchAdminUsers() {
+  return request<AdminUser[]>("/admin/users");
+}
+
+export function fetchAdminSessions(filters?: { team_id?: number; user_id?: number; status?: string }) {
+  const params = new URLSearchParams();
+  if (filters?.team_id !== undefined) {
+    params.set("team_id", String(filters.team_id));
+  }
+  if (filters?.user_id !== undefined) {
+    params.set("user_id", String(filters.user_id));
+  }
+  if (filters?.status) {
+    params.set("status", filters.status);
+  }
+  const suffix = params.toString() ? `?${params.toString()}` : "";
+  return request<Session[]>(`/admin/sessions${suffix}`);
+}
+
+export async function fetchTeamMembers(teamId: number) {
+  await setCurrentTeam(teamId);
+  return request<TeamMember[]>("/admin/members");
+}
+
+export async function addTeamMember(teamId: number, email: string, role: TeamRole) {
+  await setCurrentTeam(teamId);
+  return request<TeamMember>("/admin/members", {
+    method: "POST",
+    body: JSON.stringify({ email, role })
+  });
+}
+
+export async function updateTeamMemberRole(teamId: number, userId: number, role: TeamRole) {
+  await setCurrentTeam(teamId);
+  return request<TeamMember>(`/admin/members/${userId}`, {
+    method: "PATCH",
+    body: JSON.stringify({ role })
+  });
+}
+
+export async function removeTeamMember(teamId: number, userId: number) {
+  await setCurrentTeam(teamId);
+  return request<void>(`/admin/members/${userId}`, {
+    method: "DELETE"
+  });
+}
+
+export async function createInviteCode(teamId: number, input?: InviteCodeCreateInput) {
+  await setCurrentTeam(teamId);
+  return request<InviteCode>("/admin/invite-codes", {
+    method: "POST",
+    body: JSON.stringify(input ?? {})
+  });
+}
+
+export async function fetchInviteCodes(teamId: number) {
+  await setCurrentTeam(teamId);
+  return request<InviteCode[]>("/admin/invite-codes");
+}
+
+export async function updateInviteCodeStatus(teamId: number, inviteCodeId: number, status: "active" | "disabled") {
+  await setCurrentTeam(teamId);
+  return request<InviteCode>(`/admin/invite-codes/${inviteCodeId}`, {
+    method: "PATCH",
+    body: JSON.stringify({ status })
   });
 }
 
 export function joinTeamByCode(code: string) {
-  return request<Team>(`/invite-codes/${code}/join`, {
-    method: "POST"
+  return request<Team>("/teams/join", {
+    method: "POST",
+    body: JSON.stringify({ code })
   });
 }
 
-export function fetchTeamSettings(teamId: number) {
-  return request<TeamSetting>(`/teams/${teamId}/settings`);
+export async function fetchTeamSettings(teamId: number) {
+  await setCurrentTeam(teamId);
+  return request<TeamSetting>("/settings/current");
 }
 
-export function updateTeamSettings(teamId: number, frame_interval_seconds: number) {
-  return request<TeamSetting>(`/teams/${teamId}/settings`, {
-    method: "PATCH",
-    body: JSON.stringify({ frame_interval_seconds })
+export async function updateTeamSettings(teamId: number, frame_interval_seconds: number, force_screen_share: boolean) {
+  await setCurrentTeam(teamId);
+  return request<TeamSetting>("/admin/settings", {
+    method: "PUT",
+    body: JSON.stringify({ frame_interval_seconds, force_screen_share })
   });
 }
 
-export function fetchCurrentSession(teamId: number) {
-  return request<Session | null>(`/teams/${teamId}/screen-sessions/current`);
+export async function fetchCurrentSession(teamId: number) {
+  await setCurrentTeam(teamId);
+  return request<Session | null>("/sessions/current");
 }
 
-export function startSession(teamId: number, source_label: string | null, source_type: string | null) {
-  return request<Session>(`/teams/${teamId}/screen-sessions/start`, {
+export async function startSession(teamId: number, source_label: string | null, source_type: string | null) {
+  await setCurrentTeam(teamId);
+  return request<Session>("/sessions/start", {
     method: "POST",
     body: JSON.stringify({ source_label, source_type })
   });
 }
 
-export function stopSession(teamId: number, sessionId: number) {
-  return request<Session>(`/teams/${teamId}/screen-sessions/${sessionId}/stop`, {
+export async function stopSession(teamId: number, sessionId: number) {
+  await setCurrentTeam(teamId);
+  void sessionId;
+  return request<Session>("/sessions/stop", {
     method: "POST"
   });
 }
 
-export function uploadFrame(
+export async function uploadFrame(
   teamId: number,
   sessionId: number,
   file: Blob,
   capturedAt: string
 ) {
+  await setCurrentTeam(teamId);
+  void sessionId;
   const formData = new FormData();
   formData.append("file", file, "frame.png");
   formData.append("captured_at", capturedAt);
 
-  return request<FrameUploadResult>(`/teams/${teamId}/screen-sessions/${sessionId}/frames`, {
+  return request<FrameUploadResult>("/screenshots/upload", {
     method: "POST",
     body: formData
   });
 }
 
-export function fetchMySummaries(teamId: number) {
-  return request<HourlySummary[]>(`/teams/${teamId}/summaries/me`);
+export async function fetchMySummaries(teamId: number) {
+  await setCurrentTeam(teamId);
+  return request<HourlySummary[]>("/summaries/my-team");
 }
 
-export function fetchTeamSummaries(teamId: number) {
-  return request<HourlySummary[]>(`/teams/${teamId}/summaries`);
+export async function fetchTeamSummaries(teamId: number) {
+  await setCurrentTeam(teamId);
+  return request<HourlySummary[]>(`/admin/summaries?team_id=${teamId}`);
 }
 
-export function fetchMemberSummaries(teamId: number, userId: number) {
-  return request<HourlySummary[]>(`/teams/${teamId}/members/${userId}/summaries`);
+export async function fetchMemberSummaries(teamId: number, userId: number) {
+  await setCurrentTeam(teamId);
+  return request<HourlySummary[]>(`/admin/members/${userId}/summaries`);
+}
+
+export async function deleteHourlySummary(teamId: number, summaryId: number) {
+  await setCurrentTeam(teamId);
+  return request<void>(`/admin/summaries/${summaryId}`, {
+    method: "DELETE"
+  });
+}
+
+export async function fetchAdminFrames(teamId: number) {
+  await setCurrentTeam(teamId);
+  return request<AdminFrame[]>("/admin/frames");
+}
+
+export async function deleteAdminFrame(teamId: number, frameId: number) {
+  await setCurrentTeam(teamId);
+  return request<void>(`/admin/frames/${frameId}`, {
+    method: "DELETE"
+  });
+}
+
+export async function fetchAuditLogs(teamId: number, filters?: { action?: string; start_date?: string; end_date?: string }) {
+  await setCurrentTeam(teamId);
+  const params = new URLSearchParams();
+  if (filters?.action) {
+    params.set("action", filters.action);
+  }
+  if (filters?.start_date) {
+    params.set("start_date", filters.start_date);
+  }
+  if (filters?.end_date) {
+    params.set("end_date", filters.end_date);
+  }
+  const suffix = params.toString() ? `?${params.toString()}` : "";
+  return request<AuditLog[]>(`/admin/audit-logs${suffix}`);
 }

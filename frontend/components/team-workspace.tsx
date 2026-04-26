@@ -92,7 +92,7 @@ function formatInterval(seconds: number) {
 
 export function TeamWorkspace() {
   const router = useRouter();
-  const [me, setMe] = useState<{ name: string; email: string } | null>(null);
+  const [me, setMe] = useState<{ name: string; email: string; is_admin: boolean } | null>(null);
   const [teams, setTeams] = useState<Team[]>([]);
   const [selectedTeamId, setSelectedTeamId] = useState<number | null>(null);
   const [selectedTeam, setSelectedTeam] = useState<Team | null>(null);
@@ -101,7 +101,8 @@ export function TeamWorkspace() {
   const [selectedMemberId, setSelectedMemberId] = useState<number | null>(null);
   const [settings, setSettings] = useState<TeamSetting>({
     frame_interval_seconds: 300,
-    frame_interval_minutes: 5
+    frame_interval_minutes: 5,
+    force_screen_share: false
   });
   const [intervalUnit, setIntervalUnit] = useState<IntervalUnit>("minutes");
   const [session, setSession] = useState<Session | null>(null);
@@ -129,10 +130,11 @@ export function TeamWorkspace() {
   const sessionRef = useRef<Session | null>(null);
   const settingsRef = useRef<TeamSetting>({
     frame_interval_seconds: 300,
-    frame_interval_minutes: 5
+    frame_interval_minutes: 5,
+    force_screen_share: false
   });
 
-  const isAdmin = selectedTeam?.my_role === "admin";
+  const isAdmin = selectedTeam?.my_role === "admin" && me?.is_admin === true;
   const isSharing = session?.status === "active";
   const selectedMember =
     selectedMemberId === null ? null : members.find((item) => item.user_id === selectedMemberId) ?? null;
@@ -363,7 +365,11 @@ export function TeamWorkspace() {
     setStatusMessage("");
 
     try {
-      const nextSettings = await updateTeamSettings(selectedTeamId, settings.frame_interval_seconds);
+      const nextSettings = await updateTeamSettings(
+        selectedTeamId,
+        settings.frame_interval_seconds,
+        settings.force_screen_share
+      );
       setSettings(nextSettings);
       setIntervalUnit(preferredIntervalUnit(nextSettings.frame_interval_seconds));
       setStatusMessage("团队抽帧频率已更新。");
@@ -423,7 +429,8 @@ export function TeamWorkspace() {
     setLastUploadAt(new Date().toISOString());
     setSettings({
       frame_interval_seconds: result.frame_interval_seconds,
-      frame_interval_minutes: result.frame_interval_minutes
+      frame_interval_minutes: result.frame_interval_minutes,
+      force_screen_share: settingsRef.current.force_screen_share
     });
     setStatusMessage("最新截图已上传并完成识别。");
 

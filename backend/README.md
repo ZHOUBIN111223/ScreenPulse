@@ -1,8 +1,8 @@
 # Backend Map
 
-This directory contains the FastAPI backend for auth, team membership,
-invite-code joins, team-scoped session lifecycle, frame ingestion, screenshot
-analysis, and hourly summary reporting.
+This directory contains the FastAPI backend for auth, current-team membership,
+invite-code joins, current-team session lifecycle, frame ingestion, screenshot
+analysis, hourly summary reporting, and global-admin API access.
 
 ## Read This In Order
 

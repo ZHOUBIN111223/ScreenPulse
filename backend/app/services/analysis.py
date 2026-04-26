@@ -189,6 +189,14 @@ def get_team_setting(db: Session, team_id: int) -> TeamSetting:
     return setting
 
 
+def delete_frame_file(frame: FrameCapture) -> None:
+    path = Path(frame.image_path)
+    try:
+        path.unlink(missing_ok=True)
+    except OSError as exc:
+        logger.warning("Failed to delete frame file %s: %s", path, exc)
+
+
 def refresh_hourly_summary(db: Session, team_id: int, user_id: int, hour_start: datetime) -> HourlySummary:
     hour_end = hour_start + timedelta(hours=1)
     observations = db.scalars(
