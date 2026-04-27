@@ -33,8 +33,3 @@ Open these ports in the server firewall and cloud security group:
 
 Local settings stay in the ignored `.env` file and can keep using `localhost`.
 Those values are not committed.
-
-## Docker Mirrors
-
-Docker builds use Aliyun-hosted base images. Backend Python packages use the
-Aliyun PyPI mirror, and frontend npm packages use the npmmirror registry.
