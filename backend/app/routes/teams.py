@@ -1,4 +1,4 @@
-"""User-facing team endpoints for creation, joining, listing, and current-team selection."""
+"""User-facing research-group endpoints for creation, joining, listing, and current-group selection."""
 
 from datetime import datetime
 
@@ -8,13 +8,13 @@ from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.database import get_db
-from app.dependencies import get_current_team, get_current_user, is_global_admin, require_team_membership
-from app.models import InviteCode, Team, TeamMember, TeamSetting, User
-from app.schemas import CurrentTeamUpdate, TeamCreateRequest, TeamJoinRequest, TeamOut
+from app.dependencies import get_current_research_group, get_current_user, is_global_admin, require_research_group_membership
+from app.models import InviteCode, ResearchGroup, ResearchGroupMember, ResearchGroupSetting, User
+from app.schemas import CurrentResearchGroupUpdate, ResearchGroupCreateRequest, ResearchGroupJoinRequest, ResearchGroupOut
 from app.services.audit import record_audit_log
 
 settings = get_settings()
-router = APIRouter(tags=["teams"])
+router = APIRouter(tags=["research-groups"])
 
 AUTH_RESPONSE = {401: {"description": "Missing, invalid, or expired bearer token."}}
 TEAM_MEMBER_RESPONSES = {
@@ -23,137 +23,177 @@ TEAM_MEMBER_RESPONSES = {
 }
 
 
-def _team_out(team: Team, membership: TeamMember) -> TeamOut:
-    return TeamOut(
-        id=team.id,
-        name=team.name,
-        created_by_user_id=team.created_by_user_id,
-        created_at=team.created_at,
-        updated_at=team.updated_at,
-        my_role=membership.role,
+def _normalize_role(role: str) -> str:
+    return {"admin": "mentor", "member": "student"}.get(role, role)
+
+
+def _legacy_role(role: str) -> str:
+    return {"mentor": "admin", "student": "member"}.get(role, role)
+
+
+def _research_group_out(group: ResearchGroup, membership: ResearchGroupMember, legacy: bool = False) -> ResearchGroupOut:
+    role = _legacy_role(membership.role) if legacy else _normalize_role(membership.role)
+    return ResearchGroupOut(
+        id=group.id,
+        name=group.name,
+        created_by_user_id=group.created_by_user_id,
+        created_at=group.created_at,
+        updated_at=group.updated_at,
+        my_role=role,
     )
 
 
 @router.post(
-    "/teams",
-    response_model=TeamOut,
-    summary="Create team",
+    "/research-groups",
+    response_model=ResearchGroupOut,
+    summary="Create research group",
     description=(
-        "Creates a team for the authenticated user. Authenticated users can call this endpoint. "
-        "On success it stores a team, makes the caller a team admin, creates default settings, sets the team current, "
+        "Creates a research group for the authenticated user. Authenticated users can call this endpoint. "
+        "On success it stores a research group, makes the caller a mentor, creates default settings, sets the group current, "
         "and writes an audit log."
     ),
-    tags=["teams"],
+    tags=["research-groups"],
     responses=AUTH_RESPONSE,
 )
 def create_team(
-    payload: TeamCreateRequest,
+    payload: ResearchGroupCreateRequest,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
-) -> TeamOut:
-    team = Team(name=payload.name.strip(), created_by_user_id=user.id)
-    db.add(team)
+) -> ResearchGroupOut:
+    group = ResearchGroup(name=payload.name.strip(), created_by_user_id=user.id)
+    db.add(group)
     db.flush()
 
-    membership = TeamMember(team_id=team.id, user_id=user.id, role="admin", status="active")
-    setting = TeamSetting(
-        team_id=team.id,
+    membership = ResearchGroupMember(research_group_id=group.id, user_id=user.id, role="mentor", status="active")
+    setting = ResearchGroupSetting(
+        research_group_id=group.id,
         frame_interval_seconds=settings.default_sampling_interval_seconds,
         frame_interval_minutes=settings.default_sampling_interval_minutes,
     )
-    user.current_team_id = team.id
+    user.current_research_group_id = group.id
     db.add(membership)
     db.add(setting)
-    record_audit_log(db, team.id, user.id, "team.created", "team", team.id)
+    record_audit_log(db, group.id, user.id, "research_group.created", "research_group", group.id)
     db.commit()
-    db.refresh(team)
+    db.refresh(group)
     db.refresh(membership)
-    return _team_out(team, membership)
+    return _research_group_out(group, membership)
+
+
+@router.post("/teams", response_model=ResearchGroupOut, include_in_schema=False)
+def create_team_legacy(
+    payload: ResearchGroupCreateRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> ResearchGroupOut:
+    result = create_team(payload, user, db)
+    return result.model_copy(update={"my_role": _legacy_role(result.my_role)})
 
 
 @router.get(
-    "/teams",
-    response_model=list[TeamOut],
-    summary="List my teams",
+    "/research-groups",
+    response_model=list[ResearchGroupOut],
+    summary="List my research groups",
     description=(
-        "Lists active teams for the authenticated user. Authenticated users can call this endpoint. "
+        "Lists active research groups for the authenticated user. Authenticated users can call this endpoint. "
         "It does not change stored application state."
     ),
-    tags=["teams"],
+    tags=["research-groups"],
     responses=AUTH_RESPONSE,
 )
-def list_teams(user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> list[TeamOut]:
+def list_research_groups(user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> list[ResearchGroupOut]:
     rows = db.execute(
-        select(Team, TeamMember)
-        .join(TeamMember, TeamMember.team_id == Team.id)
-        .where(TeamMember.user_id == user.id, TeamMember.status == "active")
-        .order_by(TeamMember.joined_at.asc())
+        select(ResearchGroup, ResearchGroupMember)
+        .join(ResearchGroupMember, ResearchGroupMember.research_group_id == ResearchGroup.id)
+        .where(ResearchGroupMember.user_id == user.id, ResearchGroupMember.status == "active")
+        .order_by(ResearchGroupMember.joined_at.asc())
     ).all()
-    return [_team_out(team, membership) for team, membership in rows]
+    return [_research_group_out(group, membership) for group, membership in rows]
+
+
+@router.get("/teams", response_model=list[ResearchGroupOut], include_in_schema=False)
+def list_teams(user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> list[ResearchGroupOut]:
+    return [item.model_copy(update={"my_role": _legacy_role(item.my_role)}) for item in list_research_groups(user, db)]
 
 
 @router.get(
-    "/teams/current",
-    response_model=TeamOut,
-    summary="Get current team",
+    "/research-groups/current",
+    response_model=ResearchGroupOut,
+    summary="Get current research group",
     description=(
-        "Returns the authenticated user's current team. Active team members can call this endpoint. "
+        "Returns the authenticated user's current research group. Active group members can call this endpoint. "
         "It does not change stored application state."
     ),
-    tags=["teams"],
+    tags=["research-groups"],
     responses=TEAM_MEMBER_RESPONSES,
 )
-def current_team(user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> TeamOut:
-    team = get_current_team(db, user)
-    membership = require_team_membership(db, user, team.id)
-    return _team_out(team, membership)
+def current_research_group(user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> ResearchGroupOut:
+    group = get_current_research_group(db, user)
+    membership = require_research_group_membership(db, user, group.id)
+    return _research_group_out(group, membership)
+
+
+@router.get("/teams/current", response_model=ResearchGroupOut, include_in_schema=False)
+def current_team(user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> ResearchGroupOut:
+    result = current_research_group(user, db)
+    return result.model_copy(update={"my_role": _legacy_role(result.my_role)})
 
 
 @router.put(
-    "/teams/current",
-    response_model=TeamOut,
-    summary="Set current team",
+    "/research-groups/current",
+    response_model=ResearchGroupOut,
+    summary="Set current research group",
     description=(
-        "Sets the authenticated user's current team. Active team members can call this endpoint. "
+        "Sets the authenticated user's current research group. Active group members can call this endpoint. "
         "On success it updates the user's current team pointer."
     ),
-    tags=["teams"],
+    tags=["research-groups"],
     responses=TEAM_MEMBER_RESPONSES,
 )
 def set_current_team(
-    payload: CurrentTeamUpdate,
+    payload: CurrentResearchGroupUpdate,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
-) -> TeamOut:
-    team = db.get(Team, payload.team_id)
-    if team is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Team not found")
+) -> ResearchGroupOut:
+    group = db.get(ResearchGroup, payload.research_group_id)
+    if group is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Research group not found")
     if is_global_admin(user):
         membership = db.scalar(
-            select(TeamMember).where(
-                TeamMember.team_id == team.id,
-                TeamMember.user_id == user.id,
-                TeamMember.status == "active",
+            select(ResearchGroupMember).where(
+                ResearchGroupMember.research_group_id == group.id,
+                ResearchGroupMember.user_id == user.id,
+                ResearchGroupMember.status == "active",
             )
-        ) or TeamMember(team_id=team.id, user_id=user.id, role="admin", status="active")
+        ) or ResearchGroupMember(research_group_id=group.id, user_id=user.id, role="mentor", status="active")
     else:
-        membership = require_team_membership(db, user, payload.team_id)
-    user.current_team_id = team.id
+        membership = require_research_group_membership(db, user, payload.research_group_id)
+    user.current_research_group_id = group.id
     db.commit()
     db.refresh(user)
-    return _team_out(team, membership)
+    return _research_group_out(group, membership)
+
+
+@router.put("/teams/current", response_model=ResearchGroupOut, include_in_schema=False)
+def set_current_team_legacy(
+    payload: CurrentResearchGroupUpdate,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> ResearchGroupOut:
+    result = set_current_team(payload, user, db)
+    return result.model_copy(update={"my_role": _legacy_role(result.my_role)})
 
 
 @router.post(
-    "/teams/join",
-    response_model=TeamOut,
-    summary="Join team by invite code",
+    "/research-groups/join",
+    response_model=ResearchGroupOut,
+    summary="Join research group by invite code",
     description=(
-        "Adds or reactivates the authenticated user as a team member using an invite code. "
+        "Adds or reactivates the authenticated user as a research-group member using an invite code. "
         "Authenticated users can call this endpoint. On success it may update invite usage, membership status, "
         "audit logs, and the user's current team."
     ),
-    tags=["teams"],
+    tags=["research-groups"],
     responses={
         **AUTH_RESPONSE,
         400: {"description": "Invite code expired or reached its usage limit."},
@@ -161,10 +201,10 @@ def set_current_team(
     },
 )
 def join_team(
-    payload: TeamJoinRequest,
+    payload: ResearchGroupJoinRequest,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
-) -> TeamOut:
+) -> ResearchGroupOut:
     invite_code = db.scalar(select(InviteCode).where(InviteCode.code == payload.code.strip().upper()))
     if invite_code is None or invite_code.status != "active":
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invite code not found")
@@ -172,27 +212,45 @@ def join_team(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invite code has expired")
 
     existing_membership = db.scalar(
-        select(TeamMember).where(TeamMember.team_id == invite_code.team_id, TeamMember.user_id == user.id)
+        select(ResearchGroupMember).where(
+            ResearchGroupMember.research_group_id == invite_code.research_group_id,
+            ResearchGroupMember.user_id == user.id,
+        )
     )
     if existing_membership is None:
         if invite_code.max_uses is not None and invite_code.used_count >= invite_code.max_uses:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invite code usage limit reached")
-        existing_membership = TeamMember(team_id=invite_code.team_id, user_id=user.id, role="member", status="active")
+        existing_membership = ResearchGroupMember(
+            research_group_id=invite_code.research_group_id,
+            user_id=user.id,
+            role="student",
+            status="active",
+        )
         db.add(existing_membership)
         invite_code.used_count += 1
-        record_audit_log(db, invite_code.team_id, user.id, "team.joined", "team", invite_code.team_id)
+        record_audit_log(db, invite_code.research_group_id, user.id, "research_group.joined", "research_group", invite_code.research_group_id)
     else:
         if existing_membership.status != "active":
             if invite_code.max_uses is not None and invite_code.used_count >= invite_code.max_uses:
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invite code usage limit reached")
             existing_membership.status = "active"
             invite_code.used_count += 1
-            record_audit_log(db, invite_code.team_id, user.id, "team.joined", "team", invite_code.team_id)
+            record_audit_log(db, invite_code.research_group_id, user.id, "research_group.joined", "research_group", invite_code.research_group_id)
 
-    team = db.get(Team, invite_code.team_id)
-    if team is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Team not found")
-    user.current_team_id = team.id
+    group = db.get(ResearchGroup, invite_code.research_group_id)
+    if group is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Research group not found")
+    user.current_research_group_id = group.id
     db.commit()
     db.refresh(existing_membership)
-    return _team_out(team, existing_membership)
+    return _research_group_out(group, existing_membership)
+
+
+@router.post("/teams/join", response_model=ResearchGroupOut, include_in_schema=False)
+def join_team_legacy(
+    payload: ResearchGroupJoinRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> ResearchGroupOut:
+    result = join_team(payload, user, db)
+    return result.model_copy(update={"my_role": _legacy_role(result.my_role)})

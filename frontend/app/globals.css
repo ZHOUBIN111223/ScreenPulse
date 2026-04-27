@@ -39,7 +39,9 @@ a {
 }
 
 button,
-input {
+input,
+textarea,
+select {
   font: inherit;
 }
 
@@ -130,6 +132,19 @@ input {
   border-radius: 14px;
   padding: 12px 14px;
   background: rgba(255, 255, 255, 0.9);
+}
+
+textarea.input {
+  min-height: 96px;
+  resize: vertical;
+}
+
+.checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--muted);
+  font-size: 0.95rem;
 }
 
 .button-row {

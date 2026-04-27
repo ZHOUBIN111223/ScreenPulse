@@ -1,22 +1,28 @@
 "use client";
 
-// Team workspace that combines team selection, screen sharing, invite management, settings, and summary review.
+// Research-group workspace that combines group selection, screen sharing, invite management, settings, and summary review.
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
+  DailyReportDetail,
   HourlySummary,
   InviteCode,
+  MentorFeedbackInput,
   Session,
   Team,
   TeamMember,
   TeamSetting,
   clearToken,
+  createStudentFeedback,
   createInviteCode,
   createTeam,
   fetchCurrentSession,
   fetchMe,
+  fetchMyDailyGoal,
+  fetchMyDailyReportDetail,
   fetchMemberSummaries,
   fetchMySummaries,
+  fetchStudentDailyReportDetail,
   fetchTeam,
   fetchTeamMembers,
   fetchTeamSettings,
@@ -24,6 +30,8 @@ import {
   getToken,
   joinTeamByCode,
   logout,
+  saveMyDailyGoal,
+  saveMyDailyReport,
   startSession,
   stopSession,
   updateTeamSettings,
@@ -43,6 +51,20 @@ function toDateKey(value: string) {
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const day = String(date.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
+}
+
+function todayDateKey() {
+  return toDateKey(new Date().toISOString());
+}
+
+function roleLabel(role: string) {
+  if (role === "mentor") {
+    return "导师";
+  }
+  if (role === "student") {
+    return "学生";
+  }
+  return role;
 }
 
 type IntervalUnit = "seconds" | "minutes" | "hours";
@@ -116,6 +138,28 @@ export function TeamWorkspace() {
   const [lastUploadAt, setLastUploadAt] = useState<string | null>(null);
   const [monitorWarning, setMonitorWarning] = useState("");
   const [dateFilter, setDateFilter] = useState("");
+  const [reportDate, setReportDate] = useState(todayDateKey());
+  const [dailyDetail, setDailyDetail] = useState<DailyReportDetail | null>(null);
+  const [dailyGoalForm, setDailyGoalForm] = useState({
+    main_goal: "",
+    planned_tasks: "",
+    expected_challenges: "",
+    needs_mentor_help: false
+  });
+  const [dailyReportForm, setDailyReportForm] = useState({
+    completed_work: "",
+    problems: "",
+    next_plan: "",
+    needs_mentor_help: false,
+    notes: ""
+  });
+  const [feedbackForm, setFeedbackForm] = useState({
+    content: "",
+    score: "",
+    status_mark: "normal" as MentorFeedbackInput["status_mark"],
+    next_step: "",
+    needs_meeting: false
+  });
   const [loadingWorkspace, setLoadingWorkspace] = useState(true);
   const [isCreatingTeam, setIsCreatingTeam] = useState(false);
   const [isJoiningTeam, setIsJoiningTeam] = useState(false);
@@ -123,6 +167,9 @@ export function TeamWorkspace() {
   const [isSavingSettings, setIsSavingSettings] = useState(false);
   const [isStarting, setIsStarting] = useState(false);
   const [isStopping, setIsStopping] = useState(false);
+  const [isSavingDailyGoal, setIsSavingDailyGoal] = useState(false);
+  const [isSavingDailyReport, setIsSavingDailyReport] = useState(false);
+  const [isSavingFeedback, setIsSavingFeedback] = useState(false);
 
   const streamRef = useRef<MediaStream | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -134,7 +181,7 @@ export function TeamWorkspace() {
     force_screen_share: false
   });
 
-  const isAdmin = selectedTeam?.my_role === "admin" && me?.is_admin === true;
+  const isAdmin = selectedTeam?.my_role === "mentor";
   const isSharing = session?.status === "active";
   const selectedMember =
     selectedMemberId === null ? null : members.find((item) => item.user_id === selectedMemberId) ?? null;
@@ -204,7 +251,7 @@ export function TeamWorkspace() {
         setSession(nextSession);
         setTeams(nextTeams);
 
-        if (selectedTeam?.my_role === "admin") {
+        if (selectedTeam?.my_role === "mentor") {
           const nextMembers = await fetchTeamMembers(selectedTeamId);
           setMembers(nextMembers);
         }
@@ -233,7 +280,7 @@ export function TeamWorkspace() {
       setIntervalUnit(preferredIntervalUnit(teamSettings.frame_interval_seconds));
       setSession(currentSession);
 
-      if (team.my_role === "admin") {
+      if (team.my_role === "mentor") {
         const teamMembers = await fetchTeamMembers(teamId);
         setMembers(teamMembers);
         const defaultMemberId =
@@ -252,8 +299,38 @@ export function TeamWorkspace() {
         setSummaries(await fetchMySummaries(teamId));
       }
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : "加载团队失败");
+      setError(loadError instanceof Error ? loadError.message : "加载课题组失败");
     }
+  }
+
+  async function loadDailyDetail(teamId: number, role: Team["my_role"], memberId: number | null, day: string) {
+    if (role === "mentor") {
+      if (memberId === null) {
+        setDailyDetail(null);
+        return;
+      }
+      setDailyDetail(await fetchStudentDailyReportDetail(teamId, memberId, day));
+      return;
+    }
+
+    const [goal, detail] = await Promise.all([
+      fetchMyDailyGoal(teamId, day),
+      fetchMyDailyReportDetail(teamId, day)
+    ]);
+    setDailyDetail(detail);
+    setDailyGoalForm({
+      main_goal: goal?.main_goal ?? "",
+      planned_tasks: goal?.planned_tasks ?? "",
+      expected_challenges: goal?.expected_challenges ?? "",
+      needs_mentor_help: goal?.needs_mentor_help ?? false
+    });
+    setDailyReportForm({
+      completed_work: detail.report?.completed_work ?? "",
+      problems: detail.report?.problems ?? "",
+      next_plan: detail.report?.next_plan ?? "",
+      needs_mentor_help: detail.report?.needs_mentor_help ?? false,
+      notes: detail.report?.notes ?? ""
+    });
   }
 
   useEffect(() => {
@@ -269,6 +346,21 @@ export function TeamWorkspace() {
       }
     })();
   }, [isAdmin, selectedMemberId, selectedTeamId]);
+
+  useEffect(() => {
+    if (!selectedTeamId || !selectedTeam) {
+      setDailyDetail(null);
+      return;
+    }
+
+    void (async () => {
+      try {
+        await loadDailyDetail(selectedTeamId, selectedTeam.my_role, selectedMemberId, reportDate);
+      } catch (loadError) {
+        setError(loadError instanceof Error ? loadError.message : "鍔犺浇鏃ユ姤澶辫触");
+      }
+    })();
+  }, [reportDate, selectedMemberId, selectedTeam, selectedTeamId]);
 
   function clearCaptureTimer() {
     if (timerRef.current !== null) {
@@ -293,7 +385,7 @@ export function TeamWorkspace() {
 
   async function handleCreateTeam() {
     if (!createTeamName.trim()) {
-      setError("请输入团队名称");
+      setError("请输入课题组名称");
       return;
     }
 
@@ -304,10 +396,10 @@ export function TeamWorkspace() {
     try {
       const team = await createTeam(createTeamName.trim());
       setCreateTeamName("");
-      setStatusMessage("团队已创建，你已自动成为 admin。");
+      setStatusMessage("课题组已创建，你已自动成为导师。");
       await refreshTeamsAndSelect(team.id);
     } catch (createError) {
-      setError(createError instanceof Error ? createError.message : "创建团队失败");
+      setError(createError instanceof Error ? createError.message : "创建课题组失败");
     } finally {
       setIsCreatingTeam(false);
     }
@@ -326,10 +418,10 @@ export function TeamWorkspace() {
     try {
       const team = await joinTeamByCode(joinCode.trim().toUpperCase());
       setJoinCode("");
-      setStatusMessage("已加入团队。");
+      setStatusMessage("已加入课题组。");
       await refreshTeamsAndSelect(team.id);
     } catch (joinError) {
-      setError(joinError instanceof Error ? joinError.message : "加入团队失败");
+      setError(joinError instanceof Error ? joinError.message : "加入课题组失败");
     } finally {
       setIsJoiningTeam(false);
     }
@@ -372,11 +464,90 @@ export function TeamWorkspace() {
       );
       setSettings(nextSettings);
       setIntervalUnit(preferredIntervalUnit(nextSettings.frame_interval_seconds));
-      setStatusMessage("团队抽帧频率已更新。");
+      setStatusMessage("课题组抽帧频率已更新。");
     } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : "保存团队设置失败");
+      setError(saveError instanceof Error ? saveError.message : "保存课题组设置失败");
     } finally {
       setIsSavingSettings(false);
+    }
+  }
+
+  async function handleSaveDailyGoal() {
+    if (!selectedTeamId || !dailyGoalForm.main_goal.trim()) {
+      setError("Please fill in today's main goal.");
+      return;
+    }
+
+    setIsSavingDailyGoal(true);
+    setError("");
+    try {
+      await saveMyDailyGoal(selectedTeamId, {
+        goal_date: reportDate,
+        ...dailyGoalForm,
+        main_goal: dailyGoalForm.main_goal.trim()
+      });
+      await loadDailyDetail(selectedTeamId, "student", null, reportDate);
+      setStatusMessage("今日目标已保存。");
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : "保存今日目标失败。");
+    } finally {
+      setIsSavingDailyGoal(false);
+    }
+  }
+
+  async function handleSaveDailyReport() {
+    if (!selectedTeamId || !dailyReportForm.completed_work.trim()) {
+      setError("Please fill in what you completed today.");
+      return;
+    }
+
+    setIsSavingDailyReport(true);
+    setError("");
+    try {
+      await saveMyDailyReport(selectedTeamId, {
+        report_date: reportDate,
+        ...dailyReportForm,
+        completed_work: dailyReportForm.completed_work.trim()
+      });
+      await loadDailyDetail(selectedTeamId, "student", null, reportDate);
+      setStatusMessage("日报已保存。");
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : "保存日报失败。");
+    } finally {
+      setIsSavingDailyReport(false);
+    }
+  }
+
+  async function handleCreateFeedback() {
+    if (!selectedTeamId || selectedMemberId === null || !feedbackForm.content.trim()) {
+      setError("Please fill in feedback content.");
+      return;
+    }
+
+    setIsSavingFeedback(true);
+    setError("");
+    try {
+      await createStudentFeedback(selectedTeamId, selectedMemberId, {
+        report_date: reportDate,
+        content: feedbackForm.content.trim(),
+        score: feedbackForm.score ? Number(feedbackForm.score) : null,
+        status_mark: feedbackForm.status_mark,
+        next_step: feedbackForm.next_step,
+        needs_meeting: feedbackForm.needs_meeting
+      });
+      setFeedbackForm({
+        content: "",
+        score: "",
+        status_mark: "normal",
+        next_step: "",
+        needs_meeting: false
+      });
+      await loadDailyDetail(selectedTeamId, "mentor", selectedMemberId, reportDate);
+      setStatusMessage("导师反馈已保存。");
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : "保存反馈失败。");
+    } finally {
+      setIsSavingFeedback(false);
     }
   }
 
@@ -434,7 +605,7 @@ export function TeamWorkspace() {
     });
     setStatusMessage("最新截图已上传并完成识别。");
 
-    if (selectedTeam?.my_role === "admin" && selectedMemberId !== null) {
+    if (selectedTeam?.my_role === "mentor" && selectedMemberId !== null) {
       setSummaries(await fetchMemberSummaries(activeTeamId, selectedMemberId));
       setMembers(await fetchTeamMembers(activeTeamId));
     } else {
@@ -501,7 +672,7 @@ export function TeamWorkspace() {
 
       streamRef.current = mediaStream;
       setSession(createdSession);
-      setStatusMessage("共享已开始，浏览器会按团队设置定时抽帧。");
+      setStatusMessage("共享已开始，浏览器会按课题组设置定时抽帧。");
 
       if (videoRef.current) {
         videoRef.current.srcObject = mediaStream;
@@ -549,7 +720,7 @@ export function TeamWorkspace() {
       <main className="app-shell">
         <div className="page-grid">
           <section className="panel">
-            <p>正在加载团队工作台...</p>
+          <p>正在加载课题组工作台...</p>
           </section>
         </div>
       </main>
@@ -560,10 +731,10 @@ export function TeamWorkspace() {
     <main className="app-shell">
       <div className="page-grid">
         <section className="hero">
-          <div className="pill">团队工作台</div>
-          <h1>围绕团队、邀请码和团队内角色组织屏幕共享总结流程。</h1>
+          <div className="pill">课题组工作台</div>
+          <h1>围绕课题组、邀请码和组内角色组织屏幕共享总结流程。</h1>
           <p>
-            当前登录账号：{me?.name ?? "-"}（{me?.email ?? "-"}）。先选择团队，再开始整屏共享、邀请成员、查看成员状态和小时级总结。
+            当前登录账号：{me?.name ?? "-"}（{me?.email ?? "-"}）。先选择课题组，再开始整屏共享、邀请学生、查看学生状态和小时级总结。
           </p>
         </section>
 
@@ -571,11 +742,11 @@ export function TeamWorkspace() {
           <section className="panel">
             <div className="form-grid">
               <div>
-                <h2>我的团队</h2>
-                <p>你只能访问自己已经加入的团队。</p>
+                <h2>我的课题组</h2>
+                <p>你只能访问自己已经加入的课题组。</p>
               </div>
               <div className="list">
-                {teams.length === 0 ? <div className="note">你还没有加入任何团队。</div> : null}
+                {teams.length === 0 ? <div className="note">你还没有加入任何课题组。</div> : null}
                 {teams.map((team) => (
                   <button
                     className={team.id === selectedTeamId ? "button button-primary" : "button button-secondary"}
@@ -584,7 +755,7 @@ export function TeamWorkspace() {
                     onClick={() => setSelectedTeamId(team.id)}
                     type="button"
                   >
-                    {team.name} · {team.my_role}
+                    {team.name} · {roleLabel(team.my_role)}
                   </button>
                 ))}
               </div>
@@ -594,15 +765,15 @@ export function TeamWorkspace() {
           <section className="panel">
             <div className="form-grid">
               <div>
-                <h2>创建团队</h2>
-                <p>创建者会自动成为团队 admin。</p>
+                <h2>创建课题组</h2>
+                <p>创建者会自动成为课题组导师。</p>
               </div>
               <label className="label">
-                团队名称
+                课题组名称
                 <input
                   className="input"
                   onChange={(event) => setCreateTeamName(event.target.value)}
-                  placeholder="例如：产品研发组"
+                  placeholder="例如：多模态学习课题组"
                   value={createTeamName}
                 />
               </label>
@@ -612,7 +783,7 @@ export function TeamWorkspace() {
                 onClick={() => void handleCreateTeam()}
                 type="button"
               >
-                {isCreatingTeam ? "创建中..." : "创建团队"}
+                {isCreatingTeam ? "创建中..." : "创建课题组"}
               </button>
             </div>
           </section>
@@ -620,8 +791,8 @@ export function TeamWorkspace() {
           <section className="panel">
             <div className="form-grid">
               <div>
-                <h2>加入团队</h2>
-                <p>输入 admin 生成的邀请码即可加入团队。</p>
+                <h2>加入课题组</h2>
+                <p>输入导师生成的邀请码即可加入课题组。</p>
               </div>
               <label className="label">
                 邀请码
@@ -638,7 +809,7 @@ export function TeamWorkspace() {
                 onClick={() => void handleJoinTeam()}
                 type="button"
               >
-                {isJoiningTeam ? "加入中..." : "加入团队"}
+                {isJoiningTeam ? "加入中..." : "加入课题组"}
               </button>
             </div>
           </section>
@@ -649,12 +820,12 @@ export function TeamWorkspace() {
             <section className="panel">
               <div className="stats-grid">
                 <div className="stat-card">
-                  当前团队
+                  当前课题组
                   <strong>{selectedTeam.name}</strong>
                 </div>
                 <div className="stat-card">
                   我的角色
-                  <strong>{selectedTeam.my_role}</strong>
+                  <strong>{roleLabel(selectedTeam.my_role)}</strong>
                 </div>
                 <div className="stat-card">
                   共享状态
@@ -720,8 +891,8 @@ export function TeamWorkspace() {
                 <section className="panel">
                   <div className="form-grid">
                     <div>
-                      <h2>团队管理</h2>
-                      <p>admin 可以生成邀请码并修改团队抽帧频率。</p>
+                  <h2>课题组管理</h2>
+                  <p>导师可以生成邀请码并修改课题组抽帧频率。</p>
                     </div>
                     <div className="button-row">
                       <button
@@ -797,6 +968,213 @@ export function TeamWorkspace() {
               ) : null}
             </section>
 
+            <section className="panel-grid">
+              <section className="panel">
+                <div className="form-grid">
+                  <div>
+                    <h2>{isAdmin ? "学生日报" : "我的每日计划"}</h2>
+                    <p>{isAdmin ? "查看所选学生的目标、日报、生成总结和反馈。" : "保存当前课题组的今日目标和每日学习记录。"}</p>
+                  </div>
+                  <label className="label">
+                    日期
+                    <input
+                      className="input"
+                      onChange={(event) => setReportDate(event.target.value)}
+                      type="date"
+                      value={reportDate}
+                    />
+                  </label>
+
+                  {!isAdmin ? (
+                    <>
+                      <label className="label">
+                        今日主要目标
+                        <textarea
+                          className="input"
+                          onChange={(event) => setDailyGoalForm((current) => ({ ...current, main_goal: event.target.value }))}
+                          rows={3}
+                          value={dailyGoalForm.main_goal}
+                        />
+                      </label>
+                      <label className="label">
+                        计划任务
+                        <textarea
+                          className="input"
+                          onChange={(event) => setDailyGoalForm((current) => ({ ...current, planned_tasks: event.target.value }))}
+                          rows={3}
+                          value={dailyGoalForm.planned_tasks}
+                        />
+                      </label>
+                      <label className="label">
+                        预期困难
+                        <textarea
+                          className="input"
+                          onChange={(event) => setDailyGoalForm((current) => ({ ...current, expected_challenges: event.target.value }))}
+                          rows={3}
+                          value={dailyGoalForm.expected_challenges}
+                        />
+                      </label>
+                      <label className="checkbox-row">
+                        <input
+                          checked={dailyGoalForm.needs_mentor_help}
+                          onChange={(event) => setDailyGoalForm((current) => ({ ...current, needs_mentor_help: event.target.checked }))}
+                          type="checkbox"
+                        />
+                        今天需要导师帮助
+                      </label>
+                      <button
+                        className="button button-secondary"
+                        disabled={isSavingDailyGoal}
+                        onClick={() => void handleSaveDailyGoal()}
+                        type="button"
+                      >
+                        {isSavingDailyGoal ? "保存中..." : "保存今日目标"}
+                      </button>
+                    </>
+                  ) : (
+                    <div className="list">
+                      <div className="list-item">
+                        <strong>今日目标</strong>
+                        <span>{dailyDetail?.goal?.main_goal ?? "尚未提交目标。"}</span>
+                        <span className="note">{dailyDetail?.goal?.planned_tasks ?? ""}</span>
+                      </div>
+                      <div className="list-item">
+                        <strong>每日报告</strong>
+                        <span>{dailyDetail?.report?.completed_work ?? "尚未提交日报。"}</span>
+                        <span className="note">{dailyDetail?.report?.problems ?? ""}</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </section>
+
+              <section className="panel">
+                <div className="form-grid">
+                  <div>
+                    <h2>{isAdmin ? "导师反馈" : "每日报告"}</h2>
+                    <p>{isAdmin ? "为所选学生的日报填写反馈。" : "记录完成事项、阻塞问题和明日计划。"}</p>
+                  </div>
+
+                  {!isAdmin ? (
+                    <>
+                      <label className="label">
+                        完成事项
+                        <textarea
+                          className="input"
+                          onChange={(event) => setDailyReportForm((current) => ({ ...current, completed_work: event.target.value }))}
+                          rows={4}
+                          value={dailyReportForm.completed_work}
+                        />
+                      </label>
+                      <label className="label">
+                        问题和阻塞
+                        <textarea
+                          className="input"
+                          onChange={(event) => setDailyReportForm((current) => ({ ...current, problems: event.target.value }))}
+                          rows={3}
+                          value={dailyReportForm.problems}
+                        />
+                      </label>
+                      <label className="label">
+                        明日计划
+                        <textarea
+                          className="input"
+                          onChange={(event) => setDailyReportForm((current) => ({ ...current, next_plan: event.target.value }))}
+                          rows={3}
+                          value={dailyReportForm.next_plan}
+                        />
+                      </label>
+                      <label className="checkbox-row">
+                        <input
+                          checked={dailyReportForm.needs_mentor_help}
+                          onChange={(event) => setDailyReportForm((current) => ({ ...current, needs_mentor_help: event.target.checked }))}
+                          type="checkbox"
+                        />
+                        需要导师帮助
+                      </label>
+                      <button
+                        className="button button-primary"
+                        disabled={isSavingDailyReport}
+                        onClick={() => void handleSaveDailyReport()}
+                        type="button"
+                      >
+                        {isSavingDailyReport ? "保存中..." : "保存日报"}
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <label className="label">
+                        反馈内容
+                        <textarea
+                          className="input"
+                          onChange={(event) => setFeedbackForm((current) => ({ ...current, content: event.target.value }))}
+                          rows={4}
+                          value={feedbackForm.content}
+                        />
+                      </label>
+                      <label className="label">
+                        状态
+                        <select
+                          className="input"
+                          onChange={(event) => setFeedbackForm((current) => ({ ...current, status_mark: event.target.value as MentorFeedbackInput["status_mark"] }))}
+                          value={feedbackForm.status_mark}
+                        >
+                          <option value="normal">正常</option>
+                          <option value="needs_attention">需要关注</option>
+                          <option value="needs_revision">需要修改</option>
+                          <option value="needs_meeting">需要会议</option>
+                          <option value="resolved">已解决</option>
+                        </select>
+                      </label>
+                      <label className="label">
+                        下一步
+                        <textarea
+                          className="input"
+                          onChange={(event) => setFeedbackForm((current) => ({ ...current, next_step: event.target.value }))}
+                          rows={3}
+                          value={feedbackForm.next_step}
+                        />
+                      </label>
+                      <button
+                        className="button button-primary"
+                        disabled={isSavingFeedback || selectedMemberId === null}
+                        onClick={() => void handleCreateFeedback()}
+                        type="button"
+                      >
+                        {isSavingFeedback ? "保存中..." : "保存反馈"}
+                      </button>
+                    </>
+                  )}
+                </div>
+              </section>
+            </section>
+
+            <section className="panel">
+              <div className="form-grid">
+                <div>
+                  <h2>当日依据</h2>
+                  <p>所选日期的生成总结和导师反馈。</p>
+                </div>
+                <div className="list">
+                  {(dailyDetail?.hourly_summaries ?? []).map((summary) => (
+                    <div className="list-item" key={summary.id}>
+                      <strong>{formatDateTime(summary.hour_start)}</strong>
+                      <span>{summary.summary_text}</span>
+                    </div>
+                  ))}
+                  {dailyDetail?.hourly_summaries.length === 0 ? <div className="note">该日期暂无小时总结。</div> : null}
+                  {(dailyDetail?.feedback ?? []).map((feedback) => (
+                    <div className="list-item" key={feedback.id}>
+                      <strong>{feedback.status_mark}</strong>
+                      <span>{feedback.content}</span>
+                      <span className="note">{feedback.next_step}</span>
+                    </div>
+                  ))}
+                  {dailyDetail?.feedback.length === 0 ? <div className="note">该日期暂无导师反馈。</div> : null}
+                </div>
+              </div>
+            </section>
+
             {isAdmin ? (
               <section className="split">
                 <section className="panel">
@@ -813,7 +1191,7 @@ export function TeamWorkspace() {
                           <span className={member.active_session ? "pill" : "pill pill-warning"}>
                             {member.active_session ? "共享中" : "未共享"}
                           </span>
-                          <span>角色：{member.role}</span>
+                          <span>角色：{roleLabel(member.role)}</span>
                           <span>开始时间：{formatDateTime(member.active_session?.started_at ?? null)}</span>
                           <span className="note">
                             最近总结：{member.latest_summary ?? "暂无小时级总结"}
@@ -836,7 +1214,7 @@ export function TeamWorkspace() {
                     <div>
                       <h2>总结查看</h2>
                       <p>
-                        当前对象：{selectedMember ? `${selectedMember.name}（${selectedMember.email}）` : "未选择成员"}
+              当前对象：{selectedMember ? `${selectedMember.name}（${selectedMember.email}）` : "未选择学生"}
                       </p>
                     </div>
                     <label className="label">
@@ -866,7 +1244,7 @@ export function TeamWorkspace() {
                 <div className="form-grid">
                   <div>
                     <h2>我的历史总结</h2>
-                    <p>member 只能查看自己的小时级总结。</p>
+              <p>学生只能查看自己的小时级总结。</p>
                   </div>
                   <label className="label">
                     按日期筛选

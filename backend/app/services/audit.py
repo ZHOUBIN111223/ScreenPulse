@@ -1,4 +1,4 @@
-"""Audit log persistence helper for team-scoped events."""
+"""Audit log persistence helper for research-group-scoped events."""
 
 from sqlalchemy.orm import Session
 
@@ -7,7 +7,7 @@ from app.models import AuditLog
 
 def record_audit_log(
     db: Session,
-    team_id: int | None,
+    research_group_id: int | None,
     actor_user_id: int | None,
     action: str,
     target_type: str,
@@ -15,7 +15,7 @@ def record_audit_log(
 ) -> None:
     db.add(
         AuditLog(
-            team_id=team_id,
+            research_group_id=research_group_id,
             actor_user_id=actor_user_id,
             action=action,
             target_type=target_type,

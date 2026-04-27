@@ -18,7 +18,7 @@ export function LoginForm() {
 
   async function routeAfterAuth() {
     const user = await fetchMe();
-    router.replace(user.is_admin ? "/admin" : "/teams");
+    router.replace(user.is_admin ? "/admin" : "/research-groups");
   }
 
   useEffect(() => {
@@ -73,9 +73,9 @@ export function LoginForm() {
               注册
             </button>
           </div>
-          <h2>{mode === "login" ? "进入团队工作台" : "创建账号"}</h2>
+          <h2>{mode === "login" ? "进入课题组工作台" : "创建账号"}</h2>
           <p>
-            新版 MVP 以团队为中心。账号登录后先进入“我的团队”，再选择团队开始共享、邀请成员或查看总结。
+            新版 MVP 以课题组为中心。账号登录后先进入“我的课题组”，再选择课题组开始共享、邀请学生或查看总结。
           </p>
         </div>
         <form className="form-grid" onSubmit={onSubmit}>

@@ -32,7 +32,8 @@ def _user_out(user: User) -> UserOut:
         id=user.id,
         email=user.email,
         name=user.name,
-        current_team_id=user.current_team_id,
+        current_research_group_id=user.current_research_group_id,
+        current_team_id=user.current_research_group_id,
         is_admin=is_global_admin(user),
     )
 

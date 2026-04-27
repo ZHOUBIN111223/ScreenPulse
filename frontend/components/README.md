@@ -4,9 +4,9 @@ This directory contains client-side UI behavior.
 
 ## Modules
 
-- `login-form.tsx`: login, registration, token restore, and redirect into the team workspace.
-- `team-workspace.tsx`: team selection, invite generation, team settings, member review, screen-share controls, and summary views.
-- `admin-panel.tsx`: admin-only console for team status, summaries, settings, invite codes, audit logs, frame history, data deletion, and member management.
+- `login-form.tsx`: login, registration, token restore, and redirect into the research-group workspace.
+- `team-workspace.tsx`: research-group selection, invite generation, group settings, member review, screen-share controls, summary views, daily goals, daily reports, and mentor feedback.
+- `admin-panel.tsx`: admin-only console for research-group status, summaries, settings, invite codes, audit logs, frame history, data deletion, and member management.
 
 ## Rules
 

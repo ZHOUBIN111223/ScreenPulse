@@ -1,7 +1,7 @@
 # Frontend Map
 
-This directory contains the Next.js UI for login, registration, current-team selection,
-current-team screen sharing, the dedicated global-admin console, and summary review.
+This directory contains the Next.js UI for login, registration, current-research-group
+selection, current-group screen sharing, the dedicated global-admin console, and summary review.
 
 ## Read This In Order
 

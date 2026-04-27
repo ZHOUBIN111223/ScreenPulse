@@ -1,14 +1,16 @@
 # Route Layer
 
-This directory contains FastAPI route modules for auth, current-team user flows,
-global-admin management, current-team screen sessions, audit logs, and summary reporting.
+This directory contains FastAPI route modules for auth, current-research-group
+user flows, mentor management, current-research-group screen sessions, daily
+learning records, audit logs, and summary reporting.
 
 ## Modules
 
 - `auth.py`: registration, login, current-user, and logout endpoints.
-- `teams.py`: user-facing team creation, listing, invite-code joins, and current-team selection.
-- `sessions.py`: current-team session lifecycle, screenshot uploads, current settings, and member summary endpoints.
-- `admin.py`: global-admin users, teams, sessions, summaries, settings, members, invite codes, audit logs, and frame history.
+- `teams.py`: user-facing research-group creation, listing, invite-code joins, and current-group selection; legacy `/teams` aliases live here.
+- `sessions.py`: current-research-group session lifecycle, screenshot uploads, current settings, and member summary endpoints.
+- `learning.py`: current-research-group daily goals, daily reports, and mentor feedback.
+- `admin.py`: global-admin users and broad listings plus mentor settings, members, invite codes, audit logs, frame history, and summaries; selected legacy `/admin` aliases remain for compatibility.
 
 ## Rules
 

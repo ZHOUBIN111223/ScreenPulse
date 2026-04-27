@@ -16,7 +16,7 @@ const mono = IBM_Plex_Mono({
 
 export const metadata: Metadata = {
   title: "ScreenPulse",
-  description: "Browser-based screen sharing analysis MVP"
+  description: "Browser-based research group screen sharing analysis MVP"
 };
 
 export default function RootLayout({
@@ -28,4 +28,3 @@ export default function RootLayout({
     </html>
   );
 }
-

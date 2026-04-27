@@ -6,9 +6,9 @@ This package contains the executable backend application and its core layers.
 
 - `config.py`: environment-backed settings and derived paths.
 - `database.py`: SQLAlchemy engine, session factory, and request-scoped DB dependency.
-- `models.py`: SQLAlchemy persistence models.
+- `models.py`: SQLAlchemy persistence models, including research group, screen-session, summary, daily report, and feedback data.
 - `observability.py`: request ID propagation and structured HTTP request logs.
-- `schemas.py`: Pydantic request and response schemas.
+- `schemas.py`: Pydantic request and response schemas for backend HTTP contracts.
 - `dependencies.py`: auth and role guards for FastAPI dependencies.
 - `security.py`: password hashing and JWT helpers.
 - `routes/`: HTTP entrypoints.

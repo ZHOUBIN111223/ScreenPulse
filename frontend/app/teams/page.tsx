@@ -1,6 +1,6 @@
-// Thin route entry that renders the shared team workspace client component.
-import { TeamWorkspace } from "../../components/team-workspace";
+// Legacy route kept only to redirect older links into the research-group workspace.
+import { redirect } from "next/navigation";
 
 export default function TeamsPage() {
-  return <TeamWorkspace />;
+  redirect("/research-groups");
 }

@@ -2,10 +2,11 @@
 
 ## Purpose
 
-ScreenPulse is a browser-based MVP for team screen-sharing analysis.
-Users create teams, join by invite code, choose a current team, voluntarily share
-a full display, and the backend turns periodic screenshots into text observations
-and hourly summaries that global admins can review.
+ScreenPulse is a browser-based MVP for research-group study process management.
+Users create research groups, join by invite code, choose a current research group,
+voluntarily share a full display, and the backend turns periodic screenshots
+into text observations and hourly summaries. Students can submit daily goals and
+daily reports, and group mentors can review student status and leave feedback.
 
 ## Read This In Order
 
@@ -19,12 +20,12 @@ and hourly summaries that global admins can review.
 
 - `frontend/`
   - Next.js App Router UI.
-  - `app/` contains thin route entries, including the main `/teams` workspace route and the `/admin` console route.
-  - `components/` contains login, registration, team workspace, admin console, and browser screen-share behavior.
+  - `app/` contains thin route entries, including the main `/research-groups` workspace route, legacy `/teams` redirect, and the `/admin` console route.
+  - `components/` contains login, registration, research-group workspace, admin console, and browser screen-share behavior.
   - `lib/api.ts` is the frontend's API contract and fetch wrapper.
 - `backend/`
   - FastAPI application with synchronous SQLAlchemy sessions over SQLite.
-  - `app/routes/` owns auth, current-team user endpoints, global-admin endpoints, settings, audit-log, summary, and screen-session endpoints.
+  - `app/routes/` owns auth, current-research-group user endpoints, mentor endpoints, settings, audit-log, summary, screen-session, and daily learning endpoints.
   - `app/services/` owns screenshot persistence, model calls, summary refresh, and audit-log helpers.
   - `app/models.py` and `app/schemas.py` are the database and API contract layers.
 - `docker-compose.yml`
@@ -37,8 +38,8 @@ and hourly summaries that global admins can review.
 - Backend persistence is synchronous `SQLAlchemy + SQLite`.
 - Multimodal analysis currently uses `requests` against an OpenAI-compatible
   `/chat/completions` endpoint.
-- The main product path stores screenshots, vision results, and hourly summaries,
-  not raw video or audio.
+- The main product path stores screenshots, vision results, hourly summaries,
+  daily goals, daily reports, mentor feedback, and audit logs, not raw video or audio.
 - LiveKit remains an optional token endpoint, not the current primary capture path.
 
 ## Dependency Direction
@@ -54,14 +55,15 @@ and hourly summaries that global admins can review.
 ## Key Entry Points
 
 - Frontend landing page: `frontend/app/page.tsx`
-- Frontend team workspace: `frontend/components/team-workspace.tsx`
+- Frontend research-group workspace: `frontend/components/team-workspace.tsx`
 - Frontend admin console: `frontend/components/admin-panel.tsx`
 - Backend application: `backend/app/main.py`
 - Local dev startup helper: `scripts/start-dev.ps1`
 - Server env initialization helper: `scripts/init-server-env.sh`
 - Auth flow: `backend/app/routes/auth.py`
-- Team flow: `backend/app/routes/teams.py`
+- Research-group flow: `backend/app/routes/teams.py`
 - Capture flow: `backend/app/routes/sessions.py`
+- Daily learning flow: `backend/app/routes/learning.py`
 - Global admin flow: `backend/app/routes/admin.py`
 - Analysis pipeline: `backend/app/services/analysis.py`
 - Integration test covering the main backend path: `backend/tests/test_api.py`
@@ -69,34 +71,41 @@ and hourly summaries that global admins can review.
 ## Core Data Flow
 
 1. The user registers or logs in through `frontend/components/login-form.tsx`.
-2. The user creates a team or joins one by invite code, which sets the backend current team.
-3. The user selects a team in `frontend/components/team-workspace.tsx`, which updates the backend current team.
-4. The browser uses `getDisplayMedia`, captures PNG frames locally, and uploads them into the current team session.
-5. Backend saves the screenshot, stores the vision result, and refreshes the team-scoped hourly summary.
-6. Team admins review member status and summaries; members can review only their own summaries.
+2. The user creates a research group or joins one by invite code, which sets the backend current research group.
+3. The user selects a research group in `frontend/components/team-workspace.tsx`, which updates the backend current research group.
+4. The browser uses `getDisplayMedia`, captures PNG frames locally, and uploads them into the current research-group session.
+5. Backend saves the screenshot, stores the vision result, and refreshes the research-group-scoped hourly summary.
+6. Students submit daily goals and daily reports in the current research group.
+7. Mentors review student status, summaries, reports, and feedback; students can review only their own learning records.
 
 ## Persistence Model
 
 - `users`
-  - Login identity, profile metadata, and current team pointer.
-- `teams`
-  - Team container and creator metadata.
-- `team_members`
-  - Team membership and role (`admin` or `member`).
+  - Login identity, profile metadata, and current research group pointer.
+- `research_groups`
+  - Research group container and creator metadata.
+- `research_group_members`
+  - Research group membership and role (`mentor` or `student`).
 - `invite_codes`
-  - Team invite codes with admin-controlled expiry, usage count, max uses, and status.
-- `team_settings`
-  - Team-scoped screenshot sampling interval and screen-share enforcement flag, with legacy minute fields kept for compatibility.
+  - Research group invite codes with mentor-controlled expiry, usage count, max uses, and status.
+- `research_group_settings`
+  - Research-group-scoped screenshot sampling interval and screen-share enforcement flag, with legacy minute fields kept for compatibility.
 - `screen_sessions`
-  - Team-scoped screen sharing sessions with start, stop, and active status.
+  - Research-group-scoped screen sharing sessions with start, stop, and active status.
 - `frame_captures`
   - Uploaded screenshots with capture metadata.
 - `vision_results`
   - Text extracted from screenshots plus the detected activity description.
 - `hourly_summaries`
-  - Team-scoped hourly summaries derived from vision results.
+  - Research-group-scoped hourly summaries derived from vision results.
+- `daily_goals`
+  - Research-group- and student-scoped daily goals submitted by students.
+- `daily_reports`
+  - Research-group- and student-scoped daily learning records submitted by students.
+- `mentor_feedback`
+  - Research-group-scoped mentor feedback for one student on one report date.
 - `audit_logs`
-  - Team-scoped audit trail for key actions such as team creation, invite generation, settings changes, and session lifecycle.
+  - Research-group-scoped audit trail for key actions such as research group creation, invite generation, settings changes, and session lifecycle.
 
 ## Change Checklist
 

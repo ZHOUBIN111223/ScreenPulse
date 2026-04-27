@@ -1,16 +1,16 @@
-"""Global-admin endpoints for users, teams, sessions, summaries, settings, and team operations."""
+"""Global-admin endpoints and research-group mentor management endpoints."""
 
 from datetime import datetime, timedelta
 from secrets import token_urlsafe
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Path, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request, status
 from sqlalchemy import desc, func, select
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.database import get_db
-from app.dependencies import get_current_team, is_global_admin, require_global_admin
+from app.dependencies import get_current_user, is_global_admin, require_current_team_admin_membership, require_global_admin
 from app.models import AuditLog, FrameCapture, HourlySummary, InviteCode, ScreenSession, Team, TeamMember, TeamSetting, User, VisionResult
 from app.schemas import (
     AdminFrameOut,
@@ -34,6 +34,7 @@ from app.services.audit import record_audit_log
 
 settings = get_settings()
 router = APIRouter(prefix="/admin", tags=["admin"])
+mentor_router = APIRouter(prefix="/mentor", tags=["mentor"])
 
 ADMIN_RESPONSES = {
     401: {"description": "Missing, invalid, or expired bearer token."},
@@ -45,24 +46,38 @@ SUMMARY_ID_PATH = Path(..., description="Hourly summary ID.")
 INVITE_ID_PATH = Path(..., description="Invite code record ID.")
 
 
+def _normalize_role(role: str) -> str:
+    return {"admin": "mentor", "member": "student"}.get(role, role)
+
+
+def _legacy_role(role: str) -> str:
+    return {"mentor": "admin", "student": "member"}.get(role, role)
+
+
+def _is_legacy_admin_path(request: Request) -> bool:
+    path = request.url.path
+    return path.startswith("/api/admin") and not path.startswith("/api/admin/research-groups")
+
+
 def _admin_user_out(user: User) -> AdminUserOut:
     return AdminUserOut(
         id=user.id,
         email=user.email,
         name=user.name,
-        current_team_id=user.current_team_id,
+        current_research_group_id=user.current_research_group_id,
+        current_team_id=user.current_research_group_id,
         is_admin=is_global_admin(user),
     )
 
 
-def _team_out(team: Team) -> TeamOut:
+def _team_out(team: Team, legacy: bool = False) -> TeamOut:
     return TeamOut(
         id=team.id,
         name=team.name,
         created_by_user_id=team.created_by_user_id,
         created_at=team.created_at,
         updated_at=team.updated_at,
-        my_role="admin",
+        my_role="admin" if legacy else "mentor",
     )
 
 
@@ -81,7 +96,11 @@ def _build_session_out(session: ScreenSession, db: Session) -> SessionOut:
 
 
 def _current_admin_team(user: User, db: Session) -> Team:
-    return get_current_team(db, user)
+    membership = require_current_team_admin_membership(db, user)
+    team = db.get(Team, membership.team_id)
+    if team is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Current research group not found")
+    return team
 
 
 def _load_team_membership_or_404(db: Session, team_id: int, user_id: int) -> TeamMember:
@@ -93,7 +112,8 @@ def _load_team_membership_or_404(db: Session, team_id: int, user_id: int) -> Tea
         )
     )
     if membership is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Team member not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Research group member not found")
+    membership.role = _normalize_role(membership.role)
     return membership
 
 
@@ -101,7 +121,7 @@ def _active_admin_count(db: Session, team_id: int) -> int:
     return db.scalar(
         select(func.count())
         .select_from(TeamMember)
-        .where(TeamMember.team_id == team_id, TeamMember.role == "admin", TeamMember.status == "active")
+        .where(TeamMember.team_id == team_id, TeamMember.role == "mentor", TeamMember.status == "active")
     ) or 0
 
 
@@ -130,20 +150,28 @@ def list_users(_: User = Depends(require_global_admin), db: Session = Depends(ge
 @router.get("/teams", response_model=list[TeamOut], responses=ADMIN_RESPONSES)
 def list_admin_teams(_: User = Depends(require_global_admin), db: Session = Depends(get_db)) -> list[TeamOut]:
     teams = db.scalars(select(Team).order_by(Team.created_at.asc())).all()
-    return [_team_out(team) for team in teams]
+    return [_team_out(team, legacy=True) for team in teams]
+
+
+@router.get("/research-groups", response_model=list[TeamOut], responses=ADMIN_RESPONSES)
+def list_admin_research_groups(_: User = Depends(require_global_admin), db: Session = Depends(get_db)) -> list[TeamOut]:
+    groups = db.scalars(select(Team).order_by(Team.created_at.asc())).all()
+    return [_team_out(group) for group in groups]
 
 
 @router.get("/sessions", response_model=list[SessionOut], responses=ADMIN_RESPONSES)
 def list_sessions(
     team_id: int | None = Query(default=None, description="Optional team filter."),
+    research_group_id: int | None = Query(default=None, description="Optional research group filter."),
     user_id: int | None = Query(default=None, description="Optional user filter."),
     session_status: str | None = Query(default=None, alias="status", description="Optional session status filter."),
     _: User = Depends(require_global_admin),
     db: Session = Depends(get_db),
 ) -> list[SessionOut]:
+    group_filter = research_group_id if research_group_id is not None else team_id
     query = select(ScreenSession)
-    if team_id is not None:
-        query = query.where(ScreenSession.team_id == team_id)
+    if group_filter is not None:
+        query = query.where(ScreenSession.team_id == group_filter)
     if user_id is not None:
         query = query.where(ScreenSession.user_id == user_id)
     if session_status:
@@ -153,47 +181,71 @@ def list_sessions(
 
 
 @router.get("/summaries", response_model=list[HourlySummaryOut], responses=ADMIN_RESPONSES)
-def list_summaries(
+def list_admin_summaries(
     team_id: int | None = Query(default=None, description="Optional team filter."),
+    research_group_id: int | None = Query(default=None, description="Optional research group filter."),
     user_id: int | None = Query(default=None, description="Optional user filter."),
     _: User = Depends(require_global_admin),
     db: Session = Depends(get_db),
 ) -> list[HourlySummaryOut]:
+    group_filter = research_group_id if research_group_id is not None else team_id
     query = select(HourlySummary)
-    if team_id is not None:
-        query = query.where(HourlySummary.team_id == team_id)
+    if group_filter is not None:
+        query = query.where(HourlySummary.team_id == group_filter)
     if user_id is not None:
         query = query.where(HourlySummary.user_id == user_id)
     summaries = db.scalars(query.order_by(HourlySummary.hour_start.desc())).all()
     return [HourlySummaryOut.model_validate(summary) for summary in summaries]
 
 
+@mentor_router.get("/summaries", response_model=list[HourlySummaryOut], responses=ADMIN_RESPONSES)
+def list_summaries(
+    team_id: int | None = Query(default=None, description="Optional team filter."),
+    research_group_id: int | None = Query(default=None, description="Optional research group filter."),
+    user_id: int | None = Query(default=None, description="Optional user filter."),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> list[HourlySummaryOut]:
+    team = _current_admin_team(user, db)
+    group_filter = research_group_id if research_group_id is not None else team_id
+    if group_filter is not None and group_filter != team.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Research group not found")
+    query = select(HourlySummary).where(HourlySummary.team_id == team.id)
+    if user_id is not None:
+        query = query.where(HourlySummary.user_id == user_id)
+    summaries = db.scalars(query.order_by(HourlySummary.hour_start.desc())).all()
+    return [HourlySummaryOut.model_validate(summary) for summary in summaries]
+
+
+@mentor_router.get("/settings", response_model=TeamSettingOut, responses=ADMIN_RESPONSES)
 @router.get("/settings", response_model=TeamSettingOut, responses=ADMIN_RESPONSES)
-def get_settings_endpoint(user: User = Depends(require_global_admin), db: Session = Depends(get_db)) -> TeamSettingOut:
+def get_settings_endpoint(user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> TeamSettingOut:
     team = _current_admin_team(user, db)
     return _team_setting_out(get_team_setting(db, team.id))
 
 
+@mentor_router.put("/settings/capture-interval", response_model=TeamSettingOut, responses=ADMIN_RESPONSES)
 @router.put("/settings/capture-interval", response_model=TeamSettingOut, responses=ADMIN_RESPONSES)
 def update_capture_interval(
     payload: CaptureIntervalUpdate,
-    user: User = Depends(require_global_admin),
+    user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> TeamSettingOut:
     team = _current_admin_team(user, db)
     setting = get_team_setting(db, team.id)
     setting.frame_interval_seconds = payload.frame_interval_seconds
     setting.frame_interval_minutes = max(1, (payload.frame_interval_seconds + 59) // 60)
-    record_audit_log(db, team.id, user.id, "team_settings.updated", "team_setting", setting.id)
+    record_audit_log(db, team.id, user.id, "research_group_settings.updated", "research_group_setting", setting.id)
     db.commit()
     db.refresh(setting)
     return _team_setting_out(setting)
 
 
+@mentor_router.put("/settings", response_model=TeamSettingOut, responses=ADMIN_RESPONSES)
 @router.put("/settings", response_model=TeamSettingOut, responses=ADMIN_RESPONSES)
 def update_admin_settings(
     payload: TeamSettingUpdate,
-    user: User = Depends(require_global_admin),
+    user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> TeamSettingOut:
     team = _current_admin_team(user, db)
@@ -203,14 +255,20 @@ def update_admin_settings(
         setting.frame_interval_minutes = max(1, (payload.frame_interval_seconds + 59) // 60)
     if payload.force_screen_share is not None:
         setting.force_screen_share = payload.force_screen_share
-    record_audit_log(db, team.id, user.id, "team_settings.updated", "team_setting", setting.id)
+    record_audit_log(db, team.id, user.id, "research_group_settings.updated", "research_group_setting", setting.id)
     db.commit()
     db.refresh(setting)
     return _team_setting_out(setting)
 
 
+@mentor_router.get("/members", response_model=list[TeamMemberOut], responses=ADMIN_RESPONSES)
 @router.get("/members", response_model=list[TeamMemberOut], responses=ADMIN_RESPONSES)
-def team_members(user: User = Depends(require_global_admin), db: Session = Depends(get_db)) -> list[TeamMemberOut]:
+def team_members(
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> list[TeamMemberOut]:
+    legacy = _is_legacy_admin_path(request)
     team = _current_admin_team(user, db)
     memberships = db.scalars(
         select(TeamMember).where(TeamMember.team_id == team.id, TeamMember.status == "active").order_by(TeamMember.joined_at.asc())
@@ -239,7 +297,7 @@ def team_members(user: User = Depends(require_global_admin), db: Session = Depen
                 user_id=member_user.id,
                 email=member_user.email,
                 name=member_user.name,
-                role=membership.role,
+                role=_legacy_role(membership.role) if legacy else _normalize_role(membership.role),
                 status=membership.status,
                 joined_at=membership.joined_at,
                 active_session=_build_session_out(active_session, db) if active_session else None,
@@ -249,33 +307,36 @@ def team_members(user: User = Depends(require_global_admin), db: Session = Depen
     return result
 
 
+@mentor_router.post("/members", response_model=TeamMemberOut, responses=ADMIN_RESPONSES)
 @router.post("/members", response_model=TeamMemberOut, responses=ADMIN_RESPONSES)
 def add_team_member(
+    request: Request,
     payload: TeamMemberAddRequest,
-    user: User = Depends(require_global_admin),
+    user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> TeamMemberOut:
+    legacy = _is_legacy_admin_path(request)
     team = _current_admin_team(user, db)
     target_user = db.scalar(select(User).where(User.email == payload.email.strip().lower()))
     if target_user is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
     membership = db.scalar(select(TeamMember).where(TeamMember.team_id == team.id, TeamMember.user_id == target_user.id))
     if membership is None:
-        membership = TeamMember(team_id=team.id, user_id=target_user.id, role=payload.role, status="active")
+        membership = TeamMember(team_id=team.id, user_id=target_user.id, role=_normalize_role(payload.role), status="active")
         db.add(membership)
     else:
-        membership.role = payload.role
+        membership.role = _normalize_role(payload.role)
         membership.status = "active"
-    if target_user.current_team_id is None:
-        target_user.current_team_id = team.id
-    record_audit_log(db, team.id, user.id, "team_member.added", "user", target_user.id)
+    if target_user.current_research_group_id is None:
+        target_user.current_research_group_id = team.id
+    record_audit_log(db, team.id, user.id, "research_group_member.added", "user", target_user.id)
     db.commit()
     db.refresh(membership)
     return TeamMemberOut(
         user_id=target_user.id,
         email=target_user.email,
         name=target_user.name,
-        role=membership.role,
+        role=_legacy_role(membership.role) if legacy else _normalize_role(membership.role),
         status=membership.status,
         joined_at=membership.joined_at,
         active_session=None,
@@ -283,29 +344,33 @@ def add_team_member(
     )
 
 
+@mentor_router.patch("/members/{user_id}", response_model=TeamMemberOut, responses=ADMIN_RESPONSES)
 @router.patch("/members/{user_id}", response_model=TeamMemberOut, responses=ADMIN_RESPONSES)
 def update_team_member(
+    request: Request,
     user_id: Annotated[int, USER_ID_PATH],
     payload: TeamMemberUpdate,
-    user: User = Depends(require_global_admin),
+    user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> TeamMemberOut:
+    legacy = _is_legacy_admin_path(request)
     team = _current_admin_team(user, db)
     membership = _load_team_membership_or_404(db, team.id, user_id)
-    if membership.role == "admin" and payload.role != "admin" and _active_admin_count(db, team.id) <= 1:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Team must keep at least one admin")
-    membership.role = payload.role
+    next_role = _normalize_role(payload.role)
+    if membership.role == "mentor" and next_role != "mentor" and _active_admin_count(db, team.id) <= 1:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Research group must keep at least one mentor")
+    membership.role = next_role
     target_user = db.get(User, user_id)
     if target_user is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Team member not found")
-    record_audit_log(db, team.id, user.id, "team_member.role_updated", "user", user_id)
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Research group member not found")
+    record_audit_log(db, team.id, user.id, "research_group_member.role_updated", "user", user_id)
     db.commit()
     db.refresh(membership)
     return TeamMemberOut(
         user_id=target_user.id,
         email=target_user.email,
         name=target_user.name,
-        role=membership.role,
+        role=_legacy_role(membership.role) if legacy else _normalize_role(membership.role),
         status=membership.status,
         joined_at=membership.joined_at,
         active_session=None,
@@ -313,16 +378,17 @@ def update_team_member(
     )
 
 
+@mentor_router.delete("/members/{user_id}", status_code=status.HTTP_204_NO_CONTENT, responses=ADMIN_RESPONSES)
 @router.delete("/members/{user_id}", status_code=status.HTTP_204_NO_CONTENT, responses=ADMIN_RESPONSES)
 def remove_team_member(
     user_id: Annotated[int, USER_ID_PATH],
-    user: User = Depends(require_global_admin),
+    user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> None:
     team = _current_admin_team(user, db)
     membership = _load_team_membership_or_404(db, team.id, user_id)
-    if membership.role == "admin" and _active_admin_count(db, team.id) <= 1:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Team must keep at least one admin")
+    if membership.role == "mentor" and _active_admin_count(db, team.id) <= 1:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Research group must keep at least one mentor")
     membership.status = "removed"
     active_sessions = db.scalars(
         select(ScreenSession).where(
@@ -334,20 +400,21 @@ def remove_team_member(
     for session in active_sessions:
         session.status = "stopped"
         session.ended_at = datetime.utcnow()
-    record_audit_log(db, team.id, user.id, "team_member.removed", "user", user_id)
+    record_audit_log(db, team.id, user.id, "research_group_member.removed", "user", user_id)
     db.commit()
 
 
+@mentor_router.post("/invite-codes", response_model=InviteCodeOut, responses=ADMIN_RESPONSES)
 @router.post("/invite-codes", response_model=InviteCodeOut, responses=ADMIN_RESPONSES)
 def create_invite_code(
     payload: InviteCodeCreateRequest | None = None,
-    user: User = Depends(require_global_admin),
+    user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> InviteCodeOut:
     team = _current_admin_team(user, db)
     invite_settings = payload or InviteCodeCreateRequest()
     invite_code = InviteCode(
-        team_id=team.id,
+        research_group_id=team.id,
         code=_generate_unique_invite_code(db),
         created_by_user_id=user.id,
         expires_at=datetime.utcnow() + timedelta(hours=invite_settings.expires_in_hours)
@@ -365,8 +432,9 @@ def create_invite_code(
     return InviteCodeOut.model_validate(invite_code)
 
 
+@mentor_router.get("/invite-codes", response_model=list[InviteCodeOut], responses=ADMIN_RESPONSES)
 @router.get("/invite-codes", response_model=list[InviteCodeOut], responses=ADMIN_RESPONSES)
-def list_invite_codes(user: User = Depends(require_global_admin), db: Session = Depends(get_db)) -> list[InviteCodeOut]:
+def list_invite_codes(user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> list[InviteCodeOut]:
     team = _current_admin_team(user, db)
     invite_codes = db.scalars(
         select(InviteCode).where(InviteCode.team_id == team.id).order_by(InviteCode.created_at.desc())
@@ -374,11 +442,12 @@ def list_invite_codes(user: User = Depends(require_global_admin), db: Session = 
     return [InviteCodeOut.model_validate(invite_code) for invite_code in invite_codes]
 
 
+@mentor_router.patch("/invite-codes/{invite_code_id}", response_model=InviteCodeOut, responses=ADMIN_RESPONSES)
 @router.patch("/invite-codes/{invite_code_id}", response_model=InviteCodeOut, responses=ADMIN_RESPONSES)
 def update_invite_code_status(
     invite_code_id: Annotated[int, INVITE_ID_PATH],
     payload: InviteCodeStatusUpdate,
-    user: User = Depends(require_global_admin),
+    user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> InviteCodeOut:
     team = _current_admin_team(user, db)
@@ -390,15 +459,28 @@ def update_invite_code_status(
     return InviteCodeOut.model_validate(invite_code)
 
 
+@mentor_router.get("/audit-logs", response_model=list[AuditLogOut], responses=ADMIN_RESPONSES)
 @router.get("/audit-logs", response_model=list[AuditLogOut], responses=ADMIN_RESPONSES)
 def list_audit_logs(
+    request: Request,
     action: str | None = Query(default=None, description="Optional exact audit action filter."),
     start_date: datetime | None = Query(default=None, description="Optional inclusive start timestamp."),
     end_date: datetime | None = Query(default=None, description="Optional inclusive end timestamp."),
-    user: User = Depends(require_global_admin),
+    user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> list[AuditLogOut]:
+    legacy = _is_legacy_admin_path(request)
     team = _current_admin_team(user, db)
+    legacy_action_map = {
+        "team.created": "research_group.created",
+        "team.joined": "research_group.joined",
+        "team_member.added": "research_group_member.added",
+        "team_member.role_updated": "research_group_member.role_updated",
+        "team_member.removed": "research_group_member.removed",
+        "team_settings.updated": "research_group_settings.updated",
+    }
+    action = legacy_action_map.get(action, action)
+    new_action_to_legacy = {new_action: old_action for old_action, new_action in legacy_action_map.items()}
     query = select(AuditLog, User).outerjoin(User, User.id == AuditLog.actor_user_id).where(AuditLog.team_id == team.id)
     if action:
         query = query.where(AuditLog.action == action)
@@ -410,11 +492,12 @@ def list_audit_logs(
     return [
         AuditLogOut(
             id=audit_log.id,
+            research_group_id=audit_log.team_id,
             team_id=audit_log.team_id,
             actor_user_id=audit_log.actor_user_id,
             actor_name=actor.name if actor else None,
             actor_email=actor.email if actor else None,
-            action=audit_log.action,
+            action=new_action_to_legacy.get(audit_log.action, audit_log.action) if legacy else audit_log.action,
             target_type=audit_log.target_type,
             target_id=audit_log.target_id,
             created_at=audit_log.created_at,
@@ -423,8 +506,9 @@ def list_audit_logs(
     ]
 
 
+@mentor_router.get("/frames", response_model=list[AdminFrameOut], responses=ADMIN_RESPONSES)
 @router.get("/frames", response_model=list[AdminFrameOut], responses=ADMIN_RESPONSES)
-def list_frame_history(user: User = Depends(require_global_admin), db: Session = Depends(get_db)) -> list[AdminFrameOut]:
+def list_frame_history(user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> list[AdminFrameOut]:
     team = _current_admin_team(user, db)
     rows = db.execute(
         select(FrameCapture, User, VisionResult)
@@ -436,6 +520,7 @@ def list_frame_history(user: User = Depends(require_global_admin), db: Session =
     return [
         AdminFrameOut(
             frame_id=frame.id,
+            research_group_id=frame.team_id,
             team_id=frame.team_id,
             session_id=frame.session_id,
             user_id=frame.user_id,
@@ -453,10 +538,11 @@ def list_frame_history(user: User = Depends(require_global_admin), db: Session =
     ]
 
 
+@mentor_router.delete("/frames/{frame_id}", status_code=status.HTTP_204_NO_CONTENT, responses=ADMIN_RESPONSES)
 @router.delete("/frames/{frame_id}", status_code=status.HTTP_204_NO_CONTENT, responses=ADMIN_RESPONSES)
 def delete_frame_history_item(
     frame_id: Annotated[int, FRAME_ID_PATH],
-    user: User = Depends(require_global_admin),
+    user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> None:
     team = _current_admin_team(user, db)
@@ -472,10 +558,11 @@ def delete_frame_history_item(
     refresh_hourly_summary(db, team.id, frame_user_id, hour_start)
 
 
+@mentor_router.get("/members/{user_id}/summaries", response_model=list[HourlySummaryOut], responses=ADMIN_RESPONSES)
 @router.get("/members/{user_id}/summaries", response_model=list[HourlySummaryOut], responses=ADMIN_RESPONSES)
 def member_summaries(
     user_id: Annotated[int, USER_ID_PATH],
-    user: User = Depends(require_global_admin),
+    user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> list[HourlySummaryOut]:
     team = _current_admin_team(user, db)
@@ -488,10 +575,11 @@ def member_summaries(
     return [HourlySummaryOut.model_validate(summary) for summary in summaries]
 
 
+@mentor_router.delete("/summaries/{summary_id}", status_code=status.HTTP_204_NO_CONTENT, responses=ADMIN_RESPONSES)
 @router.delete("/summaries/{summary_id}", status_code=status.HTTP_204_NO_CONTENT, responses=ADMIN_RESPONSES)
 def delete_hourly_summary(
     summary_id: Annotated[int, SUMMARY_ID_PATH],
-    user: User = Depends(require_global_admin),
+    user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> None:
     team = _current_admin_team(user, db)

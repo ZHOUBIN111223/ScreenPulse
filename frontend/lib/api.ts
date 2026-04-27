@@ -1,11 +1,13 @@
-// Frontend API contract types and request helpers for the team-based ScreenPulse backend.
-export type TeamRole = "admin" | "member";
+// Frontend API contract types and request helpers for the research-group ScreenPulse backend.
+export type ResearchGroupRole = "mentor" | "student";
+export type TeamRole = ResearchGroupRole;
 
 export type User = {
   id: number;
   email: string;
   name: string;
-  current_team_id: number | null;
+  current_research_group_id: number | null;
+  current_team_id?: number | null;
   is_admin: boolean;
 };
 
@@ -15,24 +17,29 @@ export type AuthResponse = {
   user: User;
 };
 
-export type Team = {
+export type ResearchGroup = {
   id: number;
   name: string;
   created_by_user_id: number;
   created_at: string;
   updated_at: string;
-  my_role: TeamRole;
+  my_role: ResearchGroupRole;
 };
 
-export type TeamSetting = {
+export type Team = ResearchGroup;
+
+export type ResearchGroupSetting = {
   frame_interval_seconds: number;
   frame_interval_minutes: number;
   force_screen_share: boolean;
 };
 
+export type TeamSetting = ResearchGroupSetting;
+
 export type Session = {
   id: number;
-  team_id: number;
+  research_group_id: number;
+  team_id?: number;
   user_id: number;
   status: "active" | "stopped";
   started_at: string;
@@ -51,20 +58,23 @@ export type FrameUploadResult = {
   frame_interval_minutes: number;
 };
 
-export type TeamMember = {
+export type ResearchGroupMember = {
   user_id: number;
   email: string;
   name: string;
-  role: TeamRole;
+  role: ResearchGroupRole;
   status: string;
   joined_at: string;
   active_session: Session | null;
   latest_summary: string | null;
 };
 
+export type TeamMember = ResearchGroupMember;
+
 export type InviteCode = {
   id: number;
-  team_id: number;
+  research_group_id: number;
+  team_id?: number;
   code: string;
   created_by_user_id: number;
   expires_at: string | null;
@@ -81,7 +91,8 @@ export type InviteCodeCreateInput = {
 
 export type HourlySummary = {
   id: number;
-  team_id: number;
+  research_group_id: number;
+  team_id?: number;
   user_id: number;
   hour_start: string;
   hour_end: string;
@@ -91,9 +102,71 @@ export type HourlySummary = {
   created_at: string;
 };
 
+export type DailyGoalInput = {
+  goal_date: string;
+  main_goal: string;
+  planned_tasks: string;
+  expected_challenges: string;
+  needs_mentor_help: boolean;
+};
+
+export type DailyGoal = DailyGoalInput & {
+  id: number;
+  research_group_id: number;
+  team_id?: number;
+  user_id: number;
+  created_at: string;
+  updated_at: string;
+};
+
+export type DailyReportInput = {
+  report_date: string;
+  completed_work: string;
+  problems: string;
+  next_plan: string;
+  needs_mentor_help: boolean;
+  notes: string;
+};
+
+export type DailyReport = DailyReportInput & {
+  id: number;
+  research_group_id: number;
+  team_id?: number;
+  user_id: number;
+  created_at: string;
+  updated_at: string;
+};
+
+export type MentorFeedbackInput = {
+  report_date: string;
+  content: string;
+  score: number | null;
+  status_mark: "normal" | "needs_attention" | "needs_revision" | "needs_meeting" | "resolved";
+  next_step: string;
+  needs_meeting: boolean;
+};
+
+export type MentorFeedback = MentorFeedbackInput & {
+  id: number;
+  research_group_id: number;
+  team_id?: number;
+  user_id: number;
+  mentor_user_id: number;
+  created_at: string;
+};
+
+export type DailyReportDetail = {
+  student: ResearchGroupMember;
+  goal: DailyGoal | null;
+  report: DailyReport | null;
+  hourly_summaries: HourlySummary[];
+  feedback: MentorFeedback[];
+};
+
 export type AuditLog = {
   id: number;
-  team_id: number | null;
+  research_group_id: number | null;
+  team_id?: number | null;
   actor_user_id: number | null;
   actor_name: string | null;
   actor_email: string | null;
@@ -105,7 +178,8 @@ export type AuditLog = {
 
 export type AdminFrame = {
   frame_id: number;
-  team_id: number;
+  research_group_id: number;
+  team_id?: number;
   session_id: number;
   user_id: number;
   user_name: string;
@@ -214,44 +288,52 @@ export function fetchMe() {
   return request<User>("/auth/me");
 }
 
-export function fetchTeams() {
-  return request<Team[]>("/teams");
+export function fetchResearchGroups() {
+  return request<ResearchGroup[]>("/research-groups");
 }
 
-export function fetchAdminTeams() {
-  return request<Team[]>("/admin/teams");
+export function fetchAdminResearchGroups() {
+  return request<ResearchGroup[]>("/admin/research-groups");
 }
 
-export function createTeam(name: string) {
-  return request<Team>("/teams", {
+export function createResearchGroup(name: string) {
+  return request<ResearchGroup>("/research-groups", {
     method: "POST",
     body: JSON.stringify({ name })
   });
 }
 
-export function fetchTeam(teamId: number) {
-  return setCurrentTeam(teamId);
+export function fetchResearchGroup(researchGroupId: number) {
+  return setCurrentResearchGroup(researchGroupId);
 }
 
-export function fetchCurrentTeam() {
-  return request<Team>("/teams/current");
+export function fetchCurrentResearchGroup() {
+  return request<ResearchGroup>("/research-groups/current");
 }
 
-export function setCurrentTeam(teamId: number) {
-  return request<Team>("/teams/current", {
+export function setCurrentResearchGroup(researchGroupId: number) {
+  return request<ResearchGroup>("/research-groups/current", {
     method: "PUT",
-    body: JSON.stringify({ team_id: teamId })
+    body: JSON.stringify({ research_group_id: researchGroupId })
   });
 }
+
+export const fetchTeams = fetchResearchGroups;
+export const fetchAdminTeams = fetchAdminResearchGroups;
+export const createTeam = createResearchGroup;
+export const fetchTeam = fetchResearchGroup;
+export const fetchCurrentTeam = fetchCurrentResearchGroup;
+export const setCurrentTeam = setCurrentResearchGroup;
 
 export function fetchAdminUsers() {
   return request<AdminUser[]>("/admin/users");
 }
 
-export function fetchAdminSessions(filters?: { team_id?: number; user_id?: number; status?: string }) {
+export function fetchAdminSessions(filters?: { research_group_id?: number; team_id?: number; user_id?: number; status?: string }) {
   const params = new URLSearchParams();
-  if (filters?.team_id !== undefined) {
-    params.set("team_id", String(filters.team_id));
+  const researchGroupId = filters?.research_group_id ?? filters?.team_id;
+  if (researchGroupId !== undefined) {
+    params.set("research_group_id", String(researchGroupId));
   }
   if (filters?.user_id !== undefined) {
     params.set("user_id", String(filters.user_id));
@@ -263,90 +345,99 @@ export function fetchAdminSessions(filters?: { team_id?: number; user_id?: numbe
   return request<Session[]>(`/admin/sessions${suffix}`);
 }
 
-export async function fetchTeamMembers(teamId: number) {
-  await setCurrentTeam(teamId);
-  return request<TeamMember[]>("/admin/members");
+export async function fetchResearchGroupMembers(researchGroupId: number) {
+  await setCurrentResearchGroup(researchGroupId);
+  return request<ResearchGroupMember[]>("/mentor/members");
 }
 
-export async function addTeamMember(teamId: number, email: string, role: TeamRole) {
-  await setCurrentTeam(teamId);
-  return request<TeamMember>("/admin/members", {
+export async function addResearchGroupMember(researchGroupId: number, email: string, role: ResearchGroupRole) {
+  await setCurrentResearchGroup(researchGroupId);
+  return request<ResearchGroupMember>("/mentor/members", {
     method: "POST",
     body: JSON.stringify({ email, role })
   });
 }
 
-export async function updateTeamMemberRole(teamId: number, userId: number, role: TeamRole) {
-  await setCurrentTeam(teamId);
-  return request<TeamMember>(`/admin/members/${userId}`, {
+export async function updateResearchGroupMemberRole(researchGroupId: number, userId: number, role: ResearchGroupRole) {
+  await setCurrentResearchGroup(researchGroupId);
+  return request<ResearchGroupMember>(`/mentor/members/${userId}`, {
     method: "PATCH",
     body: JSON.stringify({ role })
   });
 }
 
-export async function removeTeamMember(teamId: number, userId: number) {
-  await setCurrentTeam(teamId);
-  return request<void>(`/admin/members/${userId}`, {
+export async function removeResearchGroupMember(researchGroupId: number, userId: number) {
+  await setCurrentResearchGroup(researchGroupId);
+  return request<void>(`/mentor/members/${userId}`, {
     method: "DELETE"
   });
 }
 
-export async function createInviteCode(teamId: number, input?: InviteCodeCreateInput) {
-  await setCurrentTeam(teamId);
-  return request<InviteCode>("/admin/invite-codes", {
+export async function createInviteCode(researchGroupId: number, input?: InviteCodeCreateInput) {
+  await setCurrentResearchGroup(researchGroupId);
+  return request<InviteCode>("/mentor/invite-codes", {
     method: "POST",
     body: JSON.stringify(input ?? {})
   });
 }
 
-export async function fetchInviteCodes(teamId: number) {
-  await setCurrentTeam(teamId);
-  return request<InviteCode[]>("/admin/invite-codes");
+export async function fetchInviteCodes(researchGroupId: number) {
+  await setCurrentResearchGroup(researchGroupId);
+  return request<InviteCode[]>("/mentor/invite-codes");
 }
 
-export async function updateInviteCodeStatus(teamId: number, inviteCodeId: number, status: "active" | "disabled") {
-  await setCurrentTeam(teamId);
-  return request<InviteCode>(`/admin/invite-codes/${inviteCodeId}`, {
+export async function updateInviteCodeStatus(researchGroupId: number, inviteCodeId: number, status: "active" | "disabled") {
+  await setCurrentResearchGroup(researchGroupId);
+  return request<InviteCode>(`/mentor/invite-codes/${inviteCodeId}`, {
     method: "PATCH",
     body: JSON.stringify({ status })
   });
 }
 
-export function joinTeamByCode(code: string) {
-  return request<Team>("/teams/join", {
+export function joinResearchGroupByCode(code: string) {
+  return request<ResearchGroup>("/research-groups/join", {
     method: "POST",
     body: JSON.stringify({ code })
   });
 }
 
-export async function fetchTeamSettings(teamId: number) {
-  await setCurrentTeam(teamId);
+export const joinTeamByCode = joinResearchGroupByCode;
+
+export async function fetchResearchGroupSettings(researchGroupId: number) {
+  await setCurrentResearchGroup(researchGroupId);
   return request<TeamSetting>("/settings/current");
 }
 
-export async function updateTeamSettings(teamId: number, frame_interval_seconds: number, force_screen_share: boolean) {
-  await setCurrentTeam(teamId);
-  return request<TeamSetting>("/admin/settings", {
+export async function updateResearchGroupSettings(researchGroupId: number, frame_interval_seconds: number, force_screen_share: boolean) {
+  await setCurrentResearchGroup(researchGroupId);
+  return request<TeamSetting>("/mentor/settings", {
     method: "PUT",
     body: JSON.stringify({ frame_interval_seconds, force_screen_share })
   });
 }
 
-export async function fetchCurrentSession(teamId: number) {
-  await setCurrentTeam(teamId);
+export const fetchTeamMembers = fetchResearchGroupMembers;
+export const addTeamMember = addResearchGroupMember;
+export const updateTeamMemberRole = updateResearchGroupMemberRole;
+export const removeTeamMember = removeResearchGroupMember;
+export const fetchTeamSettings = fetchResearchGroupSettings;
+export const updateTeamSettings = updateResearchGroupSettings;
+
+export async function fetchCurrentSession(researchGroupId: number) {
+  await setCurrentResearchGroup(researchGroupId);
   return request<Session | null>("/sessions/current");
 }
 
-export async function startSession(teamId: number, source_label: string | null, source_type: string | null) {
-  await setCurrentTeam(teamId);
+export async function startSession(researchGroupId: number, source_label: string | null, source_type: string | null) {
+  await setCurrentResearchGroup(researchGroupId);
   return request<Session>("/sessions/start", {
     method: "POST",
     body: JSON.stringify({ source_label, source_type })
   });
 }
 
-export async function stopSession(teamId: number, sessionId: number) {
-  await setCurrentTeam(teamId);
+export async function stopSession(researchGroupId: number, sessionId: number) {
+  await setCurrentResearchGroup(researchGroupId);
   void sessionId;
   return request<Session>("/sessions/stop", {
     method: "POST"
@@ -354,12 +445,12 @@ export async function stopSession(teamId: number, sessionId: number) {
 }
 
 export async function uploadFrame(
-  teamId: number,
+  researchGroupId: number,
   sessionId: number,
   file: Blob,
   capturedAt: string
 ) {
-  await setCurrentTeam(teamId);
+  await setCurrentResearchGroup(researchGroupId);
   void sessionId;
   const formData = new FormData();
   formData.append("file", file, "frame.png");
@@ -371,42 +462,95 @@ export async function uploadFrame(
   });
 }
 
-export async function fetchMySummaries(teamId: number) {
-  await setCurrentTeam(teamId);
-  return request<HourlySummary[]>("/summaries/my-team");
+export async function fetchMySummaries(researchGroupId: number) {
+  await setCurrentResearchGroup(researchGroupId);
+  return request<HourlySummary[]>("/summaries/my-research-group");
 }
 
-export async function fetchTeamSummaries(teamId: number) {
-  await setCurrentTeam(teamId);
-  return request<HourlySummary[]>(`/admin/summaries?team_id=${teamId}`);
+export async function fetchMyDailyGoal(researchGroupId: number, goalDate: string) {
+  await setCurrentResearchGroup(researchGroupId);
+  return request<DailyGoal | null>(`/daily-goals/my?goal_date=${encodeURIComponent(goalDate)}`);
 }
 
-export async function fetchMemberSummaries(teamId: number, userId: number) {
-  await setCurrentTeam(teamId);
-  return request<HourlySummary[]>(`/admin/members/${userId}/summaries`);
+export async function saveMyDailyGoal(researchGroupId: number, input: DailyGoalInput) {
+  await setCurrentResearchGroup(researchGroupId);
+  return request<DailyGoal>("/daily-goals/my", {
+    method: "PUT",
+    body: JSON.stringify(input)
+  });
 }
 
-export async function deleteHourlySummary(teamId: number, summaryId: number) {
-  await setCurrentTeam(teamId);
-  return request<void>(`/admin/summaries/${summaryId}`, {
+export async function fetchMyDailyReports(researchGroupId: number) {
+  await setCurrentResearchGroup(researchGroupId);
+  return request<DailyReport[]>("/daily-reports/my");
+}
+
+export async function fetchMyDailyReportDetail(researchGroupId: number, reportDate: string) {
+  await setCurrentResearchGroup(researchGroupId);
+  return request<DailyReportDetail>(`/daily-reports/my/detail?report_date=${encodeURIComponent(reportDate)}`);
+}
+
+export async function saveMyDailyReport(researchGroupId: number, input: DailyReportInput) {
+  await setCurrentResearchGroup(researchGroupId);
+  return request<DailyReport>("/daily-reports/my", {
+    method: "PUT",
+    body: JSON.stringify(input)
+  });
+}
+
+export async function fetchStudentDailyReports(researchGroupId: number, userId: number) {
+  await setCurrentResearchGroup(researchGroupId);
+  return request<DailyReport[]>(`/mentor/students/${userId}/daily-reports`);
+}
+
+export async function fetchStudentDailyReportDetail(researchGroupId: number, userId: number, reportDate: string) {
+  await setCurrentResearchGroup(researchGroupId);
+  return request<DailyReportDetail>(
+    `/mentor/students/${userId}/daily-report?report_date=${encodeURIComponent(reportDate)}`
+  );
+}
+
+export async function createStudentFeedback(researchGroupId: number, userId: number, input: MentorFeedbackInput) {
+  await setCurrentResearchGroup(researchGroupId);
+  return request<MentorFeedback>(`/mentor/students/${userId}/feedback`, {
+    method: "POST",
+    body: JSON.stringify(input)
+  });
+}
+
+export async function fetchResearchGroupSummaries(researchGroupId: number) {
+  await setCurrentResearchGroup(researchGroupId);
+  return request<HourlySummary[]>(`/mentor/summaries?research_group_id=${researchGroupId}`);
+}
+
+export async function fetchMemberSummaries(researchGroupId: number, userId: number) {
+  await setCurrentResearchGroup(researchGroupId);
+  return request<HourlySummary[]>(`/mentor/members/${userId}/summaries`);
+}
+
+export const fetchTeamSummaries = fetchResearchGroupSummaries;
+
+export async function deleteHourlySummary(researchGroupId: number, summaryId: number) {
+  await setCurrentResearchGroup(researchGroupId);
+  return request<void>(`/mentor/summaries/${summaryId}`, {
     method: "DELETE"
   });
 }
 
-export async function fetchAdminFrames(teamId: number) {
-  await setCurrentTeam(teamId);
-  return request<AdminFrame[]>("/admin/frames");
+export async function fetchAdminFrames(researchGroupId: number) {
+  await setCurrentResearchGroup(researchGroupId);
+  return request<AdminFrame[]>("/mentor/frames");
 }
 
-export async function deleteAdminFrame(teamId: number, frameId: number) {
-  await setCurrentTeam(teamId);
-  return request<void>(`/admin/frames/${frameId}`, {
+export async function deleteAdminFrame(researchGroupId: number, frameId: number) {
+  await setCurrentResearchGroup(researchGroupId);
+  return request<void>(`/mentor/frames/${frameId}`, {
     method: "DELETE"
   });
 }
 
-export async function fetchAuditLogs(teamId: number, filters?: { action?: string; start_date?: string; end_date?: string }) {
-  await setCurrentTeam(teamId);
+export async function fetchAuditLogs(researchGroupId: number, filters?: { action?: string; start_date?: string; end_date?: string }) {
+  await setCurrentResearchGroup(researchGroupId);
   const params = new URLSearchParams();
   if (filters?.action) {
     params.set("action", filters.action);
@@ -418,5 +562,5 @@ export async function fetchAuditLogs(teamId: number, filters?: { action?: string
     params.set("end_date", filters.end_date);
   }
   const suffix = params.toString() ? `?${params.toString()}` : "";
-  return request<AuditLog[]>(`/admin/audit-logs${suffix}`);
+  return request<AuditLog[]>(`/mentor/audit-logs${suffix}`);
 }

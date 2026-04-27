@@ -1,8 +1,9 @@
 # Backend Map
 
-This directory contains the FastAPI backend for auth, current-team membership,
-invite-code joins, current-team session lifecycle, frame ingestion, screenshot
-analysis, hourly summary reporting, and global-admin API access.
+This directory contains the FastAPI backend for auth, current-research-group
+membership, invite-code joins, current-research-group session lifecycle, frame
+ingestion, screenshot analysis, hourly summary reporting, mentor management,
+and global-admin API access.
 
 ## Read This In Order
 
@@ -19,4 +20,5 @@ analysis, hourly summary reporting, and global-admin API access.
 - Keep HTTP concerns in `app/routes/`.
 - Keep filesystem writes, model calls, summary refresh, and audit persistence in `app/services/`.
 - Keep API contract changes mirrored in `frontend/lib/api.ts`.
+- Keep `/api/research-groups` and `/api/mentor` as the primary business APIs; old `/api/teams` and selected `/api/admin` group-management paths are compatibility aliases only.
 - Preserve the MVP boundary: screenshots, vision results, and summaries are stored, not full recordings.

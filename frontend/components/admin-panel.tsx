@@ -1,6 +1,6 @@
 "use client";
 
-// Admin-only team console for member, invite, settings, audit, summary, and frame-history management.
+// Admin-only research-group console for member, invite, settings, audit, summary, and frame-history management.
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
@@ -38,7 +38,7 @@ type AdminTab = "team" | "settings" | "invites" | "audit" | "monitor" | "data";
 type IntervalUnit = "seconds" | "minutes" | "hours";
 
 const tabs: { value: AdminTab; label: string }[] = [
-  { value: "team", label: "团队管理" },
+  { value: "team", label: "课题组管理" },
   { value: "settings", label: "设置管理" },
   { value: "invites", label: "邀请码管理" },
   { value: "audit", label: "审计日志" },
@@ -53,12 +53,12 @@ const intervalUnits: { value: IntervalUnit; label: string; multiplier: number }[
 ];
 
 const auditActions = [
-  "team.created",
-  "team.joined",
-  "team_member.added",
-  "team_member.role_updated",
-  "team_member.removed",
-  "team_settings.updated",
+  "research_group.created",
+  "research_group.joined",
+  "research_group_member.added",
+  "research_group_member.role_updated",
+  "research_group_member.removed",
+  "research_group_settings.updated",
   "invite_code.created",
   "invite_code.status_updated",
   "screen_session.started",
@@ -127,7 +127,7 @@ export function AdminPanel() {
   const [auditEndDate, setAuditEndDate] = useState("");
   const [activeTab, setActiveTab] = useState<AdminTab>("team");
   const [newMemberEmail, setNewMemberEmail] = useState("");
-  const [newMemberRole, setNewMemberRole] = useState<TeamRole>("member");
+  const [newMemberRole, setNewMemberRole] = useState<TeamRole>("student");
   const [intervalUnit, setIntervalUnit] = useState<IntervalUnit>("minutes");
   const [intervalValue, setIntervalValue] = useState(5);
   const [forceScreenShare, setForceScreenShare] = useState(false);
@@ -142,7 +142,7 @@ export function AdminPanel() {
     () => teams.find((team) => team.id === selectedTeamId) ?? null,
     [selectedTeamId, teams]
   );
-  const adminTeams = useMemo(() => teams.filter((team) => team.my_role === "admin"), [teams]);
+  const adminTeams = useMemo(() => teams.filter((team) => team.my_role === "mentor"), [teams]);
   const liveMembers = members.filter((member) => member.active_session);
   const totalFrames = frames.length;
   const recognizedFrames = frames.filter((frame) => frame.recognized_content || frame.activity_description).length;
@@ -172,7 +172,7 @@ export function AdminPanel() {
       try {
         const user = await fetchMe();
         if (!user.is_admin) {
-          router.replace("/teams");
+        router.replace("/research-groups");
           return;
         }
         const currentTeams = await fetchAdminTeams();
@@ -286,7 +286,7 @@ export function AdminPanel() {
   }
 
   async function handleSaveSettings() {
-    if (!selectedTeamId || !window.confirm("确认保存团队共享设置？")) {
+    if (!selectedTeamId || !window.confirm("确认保存课题组共享设置？")) {
       return;
     }
 
@@ -299,9 +299,9 @@ export function AdminPanel() {
       setIntervalValue(intervalDisplayValue(nextSettings.frame_interval_seconds, nextUnit));
       setForceScreenShare(nextSettings.force_screen_share);
       await loadAuditData(selectedTeamId);
-      setStatusMessage("团队设置已更新");
+      setStatusMessage("课题组设置已更新");
     } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : "保存团队设置失败");
+      setError(saveError instanceof Error ? saveError.message : "保存课题组设置失败");
     }
   }
 
@@ -342,17 +342,17 @@ export function AdminPanel() {
     try {
       await addTeamMember(selectedTeamId, newMemberEmail.trim(), newMemberRole);
       setNewMemberEmail("");
-      setNewMemberRole("member");
+      setNewMemberRole("student");
       await loadMembers(selectedTeamId);
       await loadAuditData(selectedTeamId);
       setStatusMessage("成员已添加");
     } catch (memberError) {
-      setError(memberError instanceof Error ? memberError.message : "添加成员失败");
+      setError(memberError instanceof Error ? memberError.message : "添加学生失败");
     }
   }
 
   async function handleRoleChange(userId: number, role: TeamRole) {
-    if (!selectedTeamId || !window.confirm(`确认将该成员角色修改为 ${role}？`)) {
+    if (!selectedTeamId || !window.confirm(`确认将该成员角色修改为 ${role === "mentor" ? "导师" : "学生"}？`)) {
       return;
     }
 
@@ -435,7 +435,7 @@ export function AdminPanel() {
       <aside className="admin-sidebar">
         <div>
           <div className="admin-brand">ScreenPulse Admin</div>
-          <p className="admin-sidebar-note">团队共享、总结、设置与审计集中管理</p>
+          <p className="admin-sidebar-note">课题组共享、总结、设置与审计集中管理</p>
         </div>
         <nav className="admin-nav" aria-label="管理员功能导航">
           {tabs.map((tab) => (
@@ -460,11 +460,11 @@ export function AdminPanel() {
         <header className="admin-topbar">
           <div>
             <p className="admin-kicker">管理员控制台</p>
-            <h1>{selectedTeam?.name ?? "请选择团队"}</h1>
+            <h1>{selectedTeam?.name ?? "请选择课题组"}</h1>
           </div>
           <div className="admin-topbar-controls">
             <label className="label">
-              管理团队
+              管理课题组
               <select
                 className="input"
                 onChange={(event) => setSelectedTeamId(Number(event.target.value))}
@@ -483,7 +483,7 @@ export function AdminPanel() {
           </div>
         </header>
 
-        {adminTeams.length === 0 ? <div className="admin-card">当前账号还没有任何团队的 admin 权限。</div> : null}
+        {adminTeams.length === 0 ? <div className="admin-card">当前账号还没有任何课题组的导师权限。</div> : null}
         {statusMessage ? <div className="success admin-alert">{statusMessage}</div> : null}
         {error ? <div className="error admin-alert">{error}</div> : null}
 
@@ -515,7 +515,7 @@ export function AdminPanel() {
                 <div className="admin-card">
                   <div className="section-heading">
                     <div>
-                      <h2>团队成员</h2>
+                      <h2>课题组成员</h2>
                       <p>查看共享状态、开始时间，并执行总结查看、角色修改和移除操作。</p>
                     </div>
                   </div>
@@ -531,8 +531,8 @@ export function AdminPanel() {
                       onChange={(event) => setNewMemberRole(event.target.value as TeamRole)}
                       value={newMemberRole}
                     >
-                      <option value="member">member</option>
-                      <option value="admin">admin</option>
+                      <option value="student">学生</option>
+                      <option value="mentor">导师</option>
                     </select>
                     <button className="button button-primary" onClick={() => void handleAddMember()} type="button">
                       添加成员
@@ -554,8 +554,8 @@ export function AdminPanel() {
                           onChange={(event) => void handleRoleChange(member.user_id, event.target.value as TeamRole)}
                           value={member.role}
                         >
-                          <option value="member">member</option>
-                          <option value="admin">admin</option>
+                          <option value="student">学生</option>
+                          <option value="mentor">导师</option>
                         </select>
                         <div className="button-row">
                           <button
@@ -615,7 +615,7 @@ export function AdminPanel() {
                 <div className="section-heading">
                   <div>
                     <h2>设置管理</h2>
-                    <p>配置团队抽帧频率和共享要求。抽帧频率支持秒、分钟和小时。</p>
+                    <p>配置课题组抽帧频率和共享要求。抽帧频率支持秒、分钟和小时。</p>
                   </div>
                 </div>
                 <div className="admin-form-grid">
@@ -740,7 +740,7 @@ export function AdminPanel() {
                 <div className="section-heading">
                   <div>
                     <h2>审计日志</h2>
-                    <p>查看团队创建、成员加入、设置修改、邀请码和数据删除等操作记录。</p>
+                    <p>查看课题组创建、成员加入、设置修改、邀请码和数据删除等操作记录。</p>
                   </div>
                 </div>
                 <div className="admin-filter-bar">

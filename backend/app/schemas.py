@@ -1,13 +1,13 @@
-"""Pydantic schemas for the team-based ScreenPulse HTTP contract."""
+"""Pydantic schemas for the research-group ScreenPulse HTTP contract."""
 
-from datetime import datetime
+from datetime import date, datetime
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class RegisterRequest(BaseModel):
     email: str = Field(description="User email address used for login.")
-    name: str = Field(min_length=1, max_length=128, description="Display name shown to team admins and members.")
+    name: str = Field(min_length=1, max_length=128, description="Display name shown to mentors and students.")
     password: str = Field(min_length=6, max_length=128, description="Plain text password used to create the account.")
 
 
@@ -22,7 +22,8 @@ class UserOut(BaseModel):
     id: int = Field(description="User ID.")
     email: str = Field(description="User email address.")
     name: str = Field(description="User display name.")
-    current_team_id: int | None = Field(default=None, description="Current team ID selected by the user.")
+    current_research_group_id: int | None = Field(default=None, description="Current research group ID selected by the user.")
+    current_team_id: int | None = Field(default=None, description="Legacy current team ID selected by the user.")
     is_admin: bool = Field(default=False, description="Whether the user is a global administrator.")
 
 
@@ -36,34 +37,46 @@ class MessageOut(BaseModel):
     message: str = Field(description="Human-readable result message.")
 
 
-class TeamCreateRequest(BaseModel):
-    name: str = Field(min_length=1, max_length=128, description="Team name.")
+class ResearchGroupCreateRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=128, description="Research group name.")
 
 
-class TeamJoinRequest(BaseModel):
-    code: str = Field(min_length=1, max_length=64, description="Invite code used to join a team.")
+class ResearchGroupJoinRequest(BaseModel):
+    code: str = Field(min_length=1, max_length=64, description="Invite code used to join a research group.")
 
 
-class CurrentTeamUpdate(BaseModel):
-    team_id: int = Field(description="Team ID to make current for the authenticated user.")
+class CurrentResearchGroupUpdate(BaseModel):
+    research_group_id: int | None = Field(default=None, description="Research group ID to make current for the authenticated user.")
+    team_id: int | None = Field(default=None, description="Legacy team ID to make current for the authenticated user.")
+
+    @model_validator(mode="after")
+    def normalize_group_id(self) -> "CurrentResearchGroupUpdate":
+        if self.research_group_id is None and self.team_id is None:
+            raise ValueError("research_group_id is required")
+        if self.research_group_id is None:
+            self.research_group_id = self.team_id
+        if self.team_id is None:
+            self.team_id = self.research_group_id
+        return self
 
 
-class TeamOut(BaseModel):
+class ResearchGroupOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
-    id: int = Field(description="Team ID.")
-    name: str = Field(description="Team name.")
-    created_by_user_id: int = Field(description="User ID of the team creator.")
-    created_at: datetime = Field(description="Team creation time.")
-    updated_at: datetime = Field(description="Last team update time.")
-    my_role: str = Field(description="Current user's role in the team.")
+    id: int = Field(description="Research group ID.")
+    name: str = Field(description="Research group name.")
+    created_by_user_id: int = Field(description="User ID of the research group creator.")
+    created_at: datetime = Field(description="Research group creation time.")
+    updated_at: datetime = Field(description="Last research group update time.")
+    my_role: str = Field(description="Current user's role in the research group, such as mentor or student.")
 
 
 class InviteCodeOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int = Field(description="Invite code record ID.")
-    team_id: int = Field(description="Team ID this invite code belongs to.")
+    research_group_id: int = Field(description="Research group ID this invite code belongs to.")
+    team_id: int | None = Field(default=None, description="Legacy team ID this invite code belongs to.")
     code: str = Field(description="Invite code value users enter to join the team.")
     created_by_user_id: int = Field(description="User ID of the admin who created the invite code.")
     expires_at: datetime | None = Field(description="Time when the invite code expires, or null if it does not expire.")
@@ -142,7 +155,8 @@ class SessionOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int = Field(description="Screen session ID.")
-    team_id: int = Field(description="Team ID for this screen session.")
+    research_group_id: int = Field(description="Research group ID for this screen session.")
+    team_id: int | None = Field(default=None, description="Legacy team ID for this screen session.")
     user_id: int = Field(description="User ID that owns this screen session.")
     status: str = Field(description="Session status, such as active or stopped.")
     started_at: datetime = Field(description="Session start time.")
@@ -162,10 +176,10 @@ class FrameUploadResult(BaseModel):
 
 
 class TeamMemberOut(BaseModel):
-    user_id: int = Field(description="Team member user ID.")
-    email: str = Field(description="Team member email address.")
-    name: str = Field(description="Team member display name.")
-    role: str = Field(description="Team role, such as admin or member.")
+    user_id: int = Field(description="Research group member user ID.")
+    email: str = Field(description="Research group member email address.")
+    name: str = Field(description="Research group member display name.")
+    role: str = Field(description="Research group role, such as mentor or student.")
     status: str = Field(description="Membership status.")
     joined_at: datetime = Field(description="Time when the user joined the team.")
     active_session: SessionOut | None = Field(description="Current active screen session, or null if not sharing.")
@@ -174,11 +188,11 @@ class TeamMemberOut(BaseModel):
 
 class TeamMemberAddRequest(BaseModel):
     email: str = Field(description="Email address of an existing ScreenPulse user to add to the team.")
-    role: str = Field(default="member", pattern="^(admin|member)$", description="Role to assign to the new member.")
+    role: str = Field(default="student", pattern="^(mentor|student|admin|member)$", description="Role to assign to the new member.")
 
 
 class TeamMemberUpdate(BaseModel):
-    role: str = Field(pattern="^(admin|member)$", description="New role for the active team member.")
+    role: str = Field(pattern="^(mentor|student|admin|member)$", description="New role for the active research group member.")
 
 
 class AdminUserOut(UserOut):
@@ -187,7 +201,8 @@ class AdminUserOut(UserOut):
 
 class AdminFrameOut(BaseModel):
     frame_id: int = Field(description="Stored screenshot frame ID.")
-    team_id: int = Field(description="Team ID for this frame.")
+    research_group_id: int = Field(description="Research group ID for this frame.")
+    team_id: int | None = Field(default=None, description="Legacy team ID for this frame.")
     session_id: int = Field(description="Screen session ID that produced this frame.")
     user_id: int = Field(description="User ID that uploaded this frame.")
     user_name: str = Field(description="Display name of the user who uploaded this frame.")
@@ -205,7 +220,8 @@ class HourlySummaryOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int = Field(description="Hourly summary ID.")
-    team_id: int = Field(description="Team ID for this summary.")
+    research_group_id: int = Field(description="Research group ID for this summary.")
+    team_id: int | None = Field(default=None, description="Legacy team ID for this summary.")
     user_id: int = Field(description="User ID this summary describes.")
     hour_start: datetime = Field(description="Start of the summarized hour.")
     hour_end: datetime = Field(description="End of the summarized hour.")
@@ -215,11 +231,100 @@ class HourlySummaryOut(BaseModel):
     created_at: datetime = Field(description="Summary creation time.")
 
 
+class DailyGoalUpsert(BaseModel):
+    goal_date: date = Field(description="Date this goal belongs to.")
+    main_goal: str = Field(min_length=1, max_length=4000, description="Main study or research goal for the day.")
+    planned_tasks: str = Field(default="", max_length=4000, description="Planned tasks for the day.")
+    expected_challenges: str = Field(default="", max_length=4000, description="Expected blockers or difficulties.")
+    needs_mentor_help: bool = Field(default=False, description="Whether the student needs mentor help today.")
+
+
+class DailyGoalOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int = Field(description="Daily goal ID.")
+    research_group_id: int = Field(description="Research group ID this daily goal belongs to.")
+    team_id: int | None = Field(default=None, description="Legacy team ID this daily goal belongs to.")
+    user_id: int = Field(description="Student user ID.")
+    goal_date: date = Field(description="Date this goal belongs to.")
+    main_goal: str = Field(description="Main study or research goal for the day.")
+    planned_tasks: str = Field(description="Planned tasks for the day.")
+    expected_challenges: str = Field(description="Expected blockers or difficulties.")
+    needs_mentor_help: bool = Field(description="Whether the student needs mentor help today.")
+    created_at: datetime = Field(description="Goal creation time.")
+    updated_at: datetime = Field(description="Goal update time.")
+
+
+class DailyReportUpsert(BaseModel):
+    report_date: date = Field(description="Date this daily report belongs to.")
+    completed_work: str = Field(min_length=1, max_length=8000, description="What the student completed today.")
+    problems: str = Field(default="", max_length=8000, description="Problems or blockers encountered today.")
+    next_plan: str = Field(default="", max_length=8000, description="What the student plans to do tomorrow.")
+    needs_mentor_help: bool = Field(default=False, description="Whether the student needs mentor help.")
+    notes: str = Field(default="", max_length=8000, description="Additional notes.")
+
+
+class DailyReportOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int = Field(description="Daily report ID.")
+    research_group_id: int = Field(description="Research group ID this report belongs to.")
+    team_id: int | None = Field(default=None, description="Legacy team ID this report belongs to.")
+    user_id: int = Field(description="Student user ID.")
+    report_date: date = Field(description="Date this daily report belongs to.")
+    completed_work: str = Field(description="What the student completed today.")
+    problems: str = Field(description="Problems or blockers encountered today.")
+    next_plan: str = Field(description="What the student plans to do tomorrow.")
+    needs_mentor_help: bool = Field(description="Whether the student needs mentor help.")
+    notes: str = Field(description="Additional notes.")
+    created_at: datetime = Field(description="Report creation time.")
+    updated_at: datetime = Field(description="Report update time.")
+
+
+class MentorFeedbackCreate(BaseModel):
+    report_date: date = Field(description="Date of the student report being reviewed.")
+    content: str = Field(min_length=1, max_length=8000, description="Mentor feedback content.")
+    score: int | None = Field(default=None, ge=0, le=100, description="Optional score from 0 to 100.")
+    status_mark: str = Field(
+        default="normal",
+        pattern="^(normal|needs_attention|needs_revision|needs_meeting|resolved)$",
+        description="Mentor status mark for this report.",
+    )
+    next_step: str = Field(default="", max_length=8000, description="Suggested next step.")
+    needs_meeting: bool = Field(default=False, description="Whether a follow-up meeting is needed.")
+
+
+class MentorFeedbackOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int = Field(description="Mentor feedback ID.")
+    research_group_id: int = Field(description="Research group ID this feedback belongs to.")
+    team_id: int | None = Field(default=None, description="Legacy team ID this feedback belongs to.")
+    user_id: int = Field(description="Student user ID.")
+    mentor_user_id: int = Field(description="Mentor user ID.")
+    report_date: date = Field(description="Date of the student report being reviewed.")
+    content: str = Field(description="Mentor feedback content.")
+    score: int | None = Field(description="Optional score from 0 to 100.")
+    status_mark: str = Field(description="Mentor status mark for this report.")
+    next_step: str = Field(description="Suggested next step.")
+    needs_meeting: bool = Field(description="Whether a follow-up meeting is needed.")
+    created_at: datetime = Field(description="Feedback creation time.")
+
+
+class DailyReportDetailOut(BaseModel):
+    student: TeamMemberOut = Field(description="Student membership and status.")
+    goal: DailyGoalOut | None = Field(description="Daily goal for this date, or null.")
+    report: DailyReportOut | None = Field(description="Student daily report for this date, or null.")
+    hourly_summaries: list[HourlySummaryOut] = Field(description="Hourly summaries generated on this date.")
+    feedback: list[MentorFeedbackOut] = Field(description="Mentor feedback for this date.")
+
+
 class AuditLogOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int = Field(description="Audit log ID.")
-    team_id: int | None = Field(description="Team ID for the audit event, or null for global events.")
+    research_group_id: int | None = Field(description="Research group ID for the audit event, or null for global events.")
+    team_id: int | None = Field(default=None, description="Legacy team ID for the audit event, or null for global events.")
     actor_user_id: int | None = Field(description="User ID that performed the action, or null for system events.")
     actor_name: str | None = Field(description="Display name of the actor, or null if unavailable.")
     actor_email: str | None = Field(description="Email of the actor, or null if unavailable.")
@@ -232,3 +337,9 @@ class AuditLogOut(BaseModel):
 class LivekitTokenResponse(BaseModel):
     livekit_url: str = Field(description="LiveKit server URL.")
     token: str = Field(description="LiveKit access token for the team room.")
+
+
+TeamCreateRequest = ResearchGroupCreateRequest
+TeamJoinRequest = ResearchGroupJoinRequest
+CurrentTeamUpdate = CurrentResearchGroupUpdate
+TeamOut = ResearchGroupOut

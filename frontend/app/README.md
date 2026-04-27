@@ -7,4 +7,5 @@ This directory contains thin Next.js route entries.
 - Prefer simple route wrappers that render shared components.
 - Keep significant UI behavior out of route files and in `frontend/components/`.
 - Keep `"use client"` directives only in files that actually need browser APIs or hooks.
+- `/research-groups` is the primary workspace route; `/teams` is a legacy redirect.
 - `/admin` is the dedicated admin console route and should remain a thin wrapper around `frontend/components/admin-panel.tsx`.

@@ -1,4 +1,4 @@
-"""Authentication and team-membership helpers shared across backend route modules."""
+"""Authentication and research-group membership helpers shared across backend route modules."""
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.config import get_settings
-from app.models import Team, TeamMember, User
+from app.models import ResearchGroup, ResearchGroupMember, User
 from app.security import decode_access_token
 
 security_scheme = HTTPBearer(auto_error=False)
@@ -33,23 +33,28 @@ def get_current_user(
     return user
 
 
-def require_team_membership(db: Session, user: User, team_id: int) -> TeamMember:
+def _normalize_role(role: str) -> str:
+    return {"admin": "mentor", "member": "student"}.get(role, role)
+
+
+def require_research_group_membership(db: Session, user: User, research_group_id: int) -> ResearchGroupMember:
     membership = db.scalar(
-        select(TeamMember).where(
-            TeamMember.team_id == team_id,
-            TeamMember.user_id == user.id,
-            TeamMember.status == "active",
+        select(ResearchGroupMember).where(
+            ResearchGroupMember.research_group_id == research_group_id,
+            ResearchGroupMember.user_id == user.id,
+            ResearchGroupMember.status == "active",
         )
     )
     if membership is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Team not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Research group not found")
+    membership.role = _normalize_role(membership.role)
     return membership
 
 
-def require_team_admin_membership(db: Session, user: User, team_id: int) -> TeamMember:
-    membership = require_team_membership(db, user, team_id)
-    if membership.role != "admin":
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required")
+def require_research_group_mentor_membership(db: Session, user: User, research_group_id: int) -> ResearchGroupMember:
+    membership = require_research_group_membership(db, user, research_group_id)
+    if membership.role != "mentor":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Mentor access required")
     return membership
 
 
@@ -63,15 +68,27 @@ def require_global_admin(user: User = Depends(get_current_user)) -> User:
     return user
 
 
-def get_current_team(db: Session, user: User) -> Team:
-    if user.current_team_id is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Current team not set")
-    team = db.get(Team, user.current_team_id)
-    if team is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Current team not found")
-    return team
+def get_current_research_group(db: Session, user: User) -> ResearchGroup:
+    if user.current_research_group_id is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Current research group not set")
+    research_group = db.get(ResearchGroup, user.current_research_group_id)
+    if research_group is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Current research group not found")
+    return research_group
 
 
-def require_current_team_membership(db: Session, user: User) -> TeamMember:
-    team = get_current_team(db, user)
-    return require_team_membership(db, user, team.id)
+def require_current_research_group_membership(db: Session, user: User) -> ResearchGroupMember:
+    research_group = get_current_research_group(db, user)
+    return require_research_group_membership(db, user, research_group.id)
+
+
+def require_current_research_group_mentor_membership(db: Session, user: User) -> ResearchGroupMember:
+    research_group = get_current_research_group(db, user)
+    return require_research_group_mentor_membership(db, user, research_group.id)
+
+
+get_current_team = get_current_research_group
+require_team_membership = require_research_group_membership
+require_team_admin_membership = require_research_group_mentor_membership
+require_current_team_membership = require_current_research_group_membership
+require_current_team_admin_membership = require_current_research_group_mentor_membership

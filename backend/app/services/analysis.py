@@ -16,7 +16,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
-from app.models import FrameCapture, HourlySummary, TeamSetting, VisionResult
+from app.models import FrameCapture, HourlySummary, ResearchGroupSetting, VisionResult
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -30,7 +30,7 @@ class VisionAnalysis:
     model_name: str
 
 
-def save_frame_file(file: UploadFile, team_id: int, session_id: int) -> tuple[Path, int, int]:
+def save_frame_file(file: UploadFile, research_group_id: int, session_id: int) -> tuple[Path, int, int]:
     if file.content_type not in ALLOWED_FRAME_CONTENT_TYPES:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unsupported image type")
 
@@ -39,7 +39,7 @@ def save_frame_file(file: UploadFile, team_id: int, session_id: int) -> tuple[Pa
         file.file.close()
         raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="Screenshot is too large")
 
-    target_dir = settings.storage_path / "frames" / str(team_id) / str(session_id)
+    target_dir = settings.storage_path / "frames" / str(research_group_id) / str(session_id)
     target_dir.mkdir(parents=True, exist_ok=True)
 
     filename = f"{uuid4().hex}.png"
@@ -157,7 +157,7 @@ def summarize_hour(entries: list[str]) -> tuple[str, str]:
         return "No frame observations are available for this hour.", model_name
 
     prompt = (
-        "Summarize the following screen observations from one team member within the same hour. "
+        "Summarize the following screen observations from one research-group member within the same hour. "
         "Return 2 to 4 short English sentences covering the main work, software in use, and context changes. "
         "Do not use bullets.\n\n"
         + "\n".join(f"- {entry}" for entry in entries)
@@ -175,11 +175,13 @@ def summarize_hour(entries: list[str]) -> tuple[str, str]:
     return f"This hour includes {len(entries)} captured frames. Main observations: {compact}", model_name
 
 
-def get_team_setting(db: Session, team_id: int) -> TeamSetting:
-    setting = db.scalar(select(TeamSetting).where(TeamSetting.team_id == team_id))
+def get_research_group_setting(db: Session, research_group_id: int) -> ResearchGroupSetting:
+    setting = db.scalar(
+        select(ResearchGroupSetting).where(ResearchGroupSetting.research_group_id == research_group_id)
+    )
     if setting is None:
-        setting = TeamSetting(
-            team_id=team_id,
+        setting = ResearchGroupSetting(
+            research_group_id=research_group_id,
             frame_interval_seconds=settings.default_sampling_interval_seconds,
             frame_interval_minutes=settings.default_sampling_interval_minutes,
         )
@@ -187,6 +189,9 @@ def get_team_setting(db: Session, team_id: int) -> TeamSetting:
         db.commit()
         db.refresh(setting)
     return setting
+
+
+get_team_setting = get_research_group_setting
 
 
 def delete_frame_file(frame: FrameCapture) -> None:
@@ -197,13 +202,13 @@ def delete_frame_file(frame: FrameCapture) -> None:
         logger.warning("Failed to delete frame file %s: %s", path, exc)
 
 
-def refresh_hourly_summary(db: Session, team_id: int, user_id: int, hour_start: datetime) -> HourlySummary:
+def refresh_hourly_summary(db: Session, research_group_id: int, user_id: int, hour_start: datetime) -> HourlySummary:
     hour_end = hour_start + timedelta(hours=1)
     observations = db.scalars(
         select(VisionResult.activity_description)
         .join(FrameCapture, VisionResult.frame_id == FrameCapture.id)
         .where(
-            VisionResult.team_id == team_id,
+            VisionResult.research_group_id == research_group_id,
             VisionResult.user_id == user_id,
             FrameCapture.captured_at >= hour_start,
             FrameCapture.captured_at < hour_end,
@@ -213,7 +218,7 @@ def refresh_hourly_summary(db: Session, team_id: int, user_id: int, hour_start: 
 
     summary = db.scalar(
         select(HourlySummary).where(
-            HourlySummary.team_id == team_id,
+            HourlySummary.research_group_id == research_group_id,
             HourlySummary.user_id == user_id,
             HourlySummary.hour_start == hour_start,
         )
@@ -224,7 +229,7 @@ def refresh_hourly_summary(db: Session, team_id: int, user_id: int, hour_start: 
 
     if summary is None:
         summary = HourlySummary(
-            team_id=team_id,
+            research_group_id=research_group_id,
             user_id=user_id,
             hour_start=hour_start,
             hour_end=hour_end,
